@@ -397,6 +397,7 @@ astrbot_plugin_user_policy/
 
 ## 相关项目
 
+- [多人格管理源码仓库](https://github.com/yanyuhanyue/astrbot_plugin_user_policy)
 - [AstrBot](https://github.com/AstrBotDevs/AstrBot)
 - [AstrBot 插件开发文档](https://docs.astrbot.app/dev/star/plugin-new.html)
 - [Private Companion](https://github.com/menglimi/astrbot_plugin_private_companion)
