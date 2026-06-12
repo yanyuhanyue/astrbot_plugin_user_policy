@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>多人格管理</title>
+  <link rel="stylesheet" href="./style.css?v=3.4.9">
+</head>
+<body>
+  <main class="app">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">多人格管理</p>
+        <h1>自由切换每个会话的人格</h1>
+        <p class="subtitle">为私聊用户、群聊和群成员分配不同人格，无需编辑配置文件。</p>
+      </div>
+      <span class="status" id="runtimeStatus">正在读取</span>
+    </header>
+
+    <nav class="tabs" aria-label="策略分类">
+      <button class="tab active" data-page="users">私聊用户</button>
+      <button class="tab" data-page="groups">群聊管理</button>
+      <button class="tab" data-page="schedules">人格计划</button>
+      <button class="tab" data-page="integrations">兼容状态</button>
+    </nav>
+
+    <section class="page active" id="page-users">
+      <div class="section-heading">
+        <div>
+          <h2>私聊用户</h2>
+          <p>为指定用户选择人格、控制记忆隔离、使用状态和插件范围。</p>
+        </div>
+        <div class="row-actions">
+          <button class="button" type="button" data-import-sessions>导入已有会话</button>
+          <button class="button primary" type="button" id="addUserButton">添加用户</button>
+        </div>
+      </div>
+      <div class="card table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>用户 ID</th>
+                <th>人格</th>
+                <th>使用状态</th>
+                <th>自行切换</th>
+                <th>对话记忆</th>
+                <th>长期记忆</th>
+                <th>主动对话</th>
+                <th>插件权限</th>
+                <th class="actions-column">操作</th>
+              </tr>
+            </thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="usersEmpty">
+          <strong>还没有私聊用户</strong>
+          <span>点击“添加用户”开始设置。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-groups">
+      <div class="section-heading">
+        <div>
+          <h2>群聊管理</h2>
+          <p>设置群默认人格、成员名单、策略管理员和插件范围。</p>
+        </div>
+        <div class="row-actions">
+          <button class="button" type="button" data-import-sessions>导入已有会话</button>
+          <button class="button primary" type="button" id="addGroupButton">添加群聊</button>
+        </div>
+      </div>
+      <div class="group-grid" id="groupsGrid"></div>
+      <div class="card empty hidden" id="groupsEmpty">
+        <strong>还没有群聊设置</strong>
+        <span>点击“添加群聊”创建第一条群聊规则。</span>
+      </div>
+    </section>
+
+    <section class="page" id="page-schedules">
+      <div class="section-heading">
+        <div>
+          <h2>人格计划</h2>
+          <p>每天、每周定时切换固定人格，或按间隔从指定范围随机切换。</p>
+        </div>
+        <button class="button primary" type="button" id="addScheduleButton">添加计划</button>
+      </div>
+      <div class="schedule-grid" id="schedulesGrid"></div>
+      <div class="card empty hidden" id="schedulesEmpty">
+        <strong>还没有人格计划</strong>
+        <span>点击“添加计划”设置自动切换。</span>
+      </div>
+    </section>
+
+    <section class="page" id="page-integrations">
+      <div class="section-heading">
+        <div>
+          <h2>兼容状态</h2>
+          <p>检测常见插件状态，并配置少量安全兼容能力。</p>
+        </div>
+      </div>
+      <div class="diagnostics" id="diagnostics"></div>
+      <div class="integration-grid" id="integrationGrid"></div>
+    </section>
+  </main>
+
+  <div class="modal hidden" id="userModal" role="dialog" aria-modal="true">
+    <div class="modal-panel">
+      <form id="userForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">私聊用户</p>
+            <h2 id="userModalTitle">添加用户</h2>
+          </div>
+          <button class="text-button" type="button" data-close="userModal">取消</button>
+        </div>
+        <div class="form-grid">
+          <label class="field">
+            <span>用户 ID</span>
+            <input id="userId" required maxlength="128" placeholder="请输入用户 ID">
+          </label>
+          <label class="field">
+            <span>使用状态</span>
+            <select id="userStatus">
+              <option value="allowed">允许使用</option>
+              <option value="blocked">禁止使用</option>
+            </select>
+          </label>
+          <label class="field full">
+            <span>AstrBot 人格</span>
+            <select id="userPersona"></select>
+            <small>人格来自 AstrBot 的“人格设定”。</small>
+          </label>
+          <label class="field full">
+            <span>回复模型</span>
+            <select id="userResponseProvider"></select>
+            <small>留空时跟随当前会话；自动人格中的单个人格模型会优先于这里。</small>
+          </label>
+          <div class="auto-persona-editor full hidden" id="userAutoPersonaFields">
+            <label class="field">
+              <span>人格选择模型</span>
+              <select id="userSelectorProvider"></select>
+              <small>可单独覆盖全局设置；自动人格会在每次回复前额外调用一次选择模型，固定人格没有这次调用。</small>
+            </label>
+            <label class="field">
+              <span>整体场景说明</span>
+              <textarea id="userAutoScenario" rows="3" maxlength="2000" placeholder="例如：学习问题优先老师人格，轻松闲聊优先朋友人格"></textarea>
+            </label>
+            <div class="field full">
+              <span>候选人格与回复模型</span>
+              <div class="auto-persona-rules" id="userAutoPersonaRules"></div>
+              <small>至少启用两个人格。每个人格可选择独立回复模型，留空则跟随当前会话。</small>
+            </div>
+          </div>
+          <label class="check-field full">
+            <input type="checkbox" id="userCanSwitch">
+            <span>允许该用户自行切换人格和记忆隔离</span>
+          </label>
+          <label class="check-field full">
+            <input type="checkbox" id="userMemoryIsolation" checked>
+            <span>
+              开启人格对话记忆隔离
+              <small>默认开启。不同人格使用独立的 AstrBot 对话历史；LivingMemory 长期记忆由下方独立开关控制。</small>
+            </span>
+          </label>
+          <label class="check-field full">
+            <input type="checkbox" id="userLivingMemoryIsolation" checked>
+            <span>
+              开启 LivingMemory 人格记忆隔离
+              <small>默认开启。召回和写入按最终人格分区；关闭后使用共享长期记忆。</small>
+            </span>
+          </label>
+          <label class="check-field full">
+            <input type="checkbox" id="userPrivateCompanionProactive" checked>
+            <span>
+              允许 Private Companion 私聊主动对话
+              <small>逐用户分闸。全局总闸关闭时不会生效；开启也不会覆盖该插件自身的关系、陪伴状态、免打扰、频率和每日上限。</small>
+            </span>
+          </label>
+          <div class="field full">
+            <span>插件权限</span>
+            <select id="userPluginMode">
+              <option value="all">允许全部插件</option>
+              <option value="allowlist">只允许选中的插件</option>
+              <option value="denylist">允许全部，但禁用选中的插件</option>
+            </select>
+          </div>
+          <div class="plugin-picker full hidden" id="userPluginPicker"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" type="button" data-close="userModal">取消</button>
+          <button class="button primary" type="submit">保存用户</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="groupModal" role="dialog" aria-modal="true">
+    <div class="modal-panel wide">
+      <form id="groupForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">群聊设置</p>
+            <h2 id="groupModalTitle">添加群聊</h2>
+          </div>
+          <button class="text-button" type="button" data-close="groupModal">取消</button>
+        </div>
+        <div class="form-grid">
+          <label class="field">
+            <span>群 ID</span>
+            <input id="groupId" required maxlength="128" placeholder="请输入群 ID">
+          </label>
+          <label class="field">
+            <span>备注</span>
+            <input id="groupDescription" maxlength="200" placeholder="例如：学习群">
+          </label>
+          <label class="field full">
+            <span>群默认人格</span>
+            <select id="groupPersona"></select>
+          </label>
+          <label class="field full">
+            <span>回复模型</span>
+            <select id="groupResponseProvider"></select>
+          </label>
+          <div class="auto-persona-editor full hidden" id="groupAutoPersonaFields">
+            <label class="field">
+              <span>人格选择模型</span>
+              <select id="groupSelectorProvider"></select>
+              <small>自动人格会在每次回复前额外调用一次选择模型；固定人格没有这次调用。</small>
+            </label>
+            <label class="field">
+              <span>整体场景说明</span>
+              <textarea id="groupAutoScenario" rows="3" maxlength="2000"></textarea>
+            </label>
+            <div class="field full">
+              <span>候选人格与回复模型</span>
+              <div class="auto-persona-rules" id="groupAutoPersonaRules"></div>
+            </div>
+          </div>
+          <label class="check-field full">
+            <input type="checkbox" id="groupMemoryIsolation" checked>
+            <span>
+              开启群聊人格对话记忆隔离
+              <small>默认开启。群默认人格切换后使用独立的 AstrBot 对话历史。</small>
+            </span>
+          </label>
+          <label class="check-field full">
+            <input type="checkbox" id="groupLivingMemoryIsolation" checked>
+            <span>开启群聊 LivingMemory 人格记忆隔离</span>
+          </label>
+          <div class="field">
+            <span>成员访问方式</span>
+            <select id="memberAccessMode">
+              <option value="all">所有成员都可使用</option>
+              <option value="allowlist">仅名单内成员可使用</option>
+              <option value="denylist">名单内成员禁止使用</option>
+            </select>
+          </div>
+          <label class="field" id="memberAccessUsersField">
+            <span>成员名单</span>
+            <textarea id="memberAccessUsers" rows="4" placeholder="每行填写一个用户 ID"></textarea>
+          </label>
+          <label class="field full">
+            <span>策略管理员</span>
+            <textarea id="groupPolicyAdmins" rows="3" placeholder="每行填写一个用户 ID"></textarea>
+            <small>这些成员可以使用 `/群切换人格`。AstrBot 管理员和可识别的群主、群管理员也可以使用。</small>
+          </label>
+          <div class="field full">
+            <span>插件权限</span>
+            <select id="groupPluginMode">
+              <option value="all">允许全部插件</option>
+              <option value="allowlist">只允许选中的插件</option>
+              <option value="denylist">允许全部，但禁用选中的插件</option>
+            </select>
+          </div>
+          <div class="plugin-picker full hidden" id="groupPluginPicker"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" type="button" data-close="groupModal">取消</button>
+          <button class="button primary" type="submit">保存群聊</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="membersModal" role="dialog" aria-modal="true">
+    <div class="modal-panel wide">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">群成员个性设置</p>
+          <h2 id="membersModalTitle">群成员</h2>
+        </div>
+        <button class="text-button" type="button" data-close="membersModal">关闭</button>
+      </div>
+      <div class="section-heading compact">
+        <p>成员设置会覆盖该群的默认人格和插件权限。</p>
+        <button class="button primary" type="button" id="addMemberButton">添加成员设置</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>用户 ID</th>
+              <th>人格</th>
+              <th>自行切换</th>
+              <th>对话记忆</th>
+              <th>长期记忆</th>
+              <th>插件权限</th>
+              <th class="actions-column">操作</th>
+            </tr>
+          </thead>
+          <tbody id="membersBody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="membersEmpty">
+        <strong>没有成员个性设置</strong>
+        <span>成员将使用当前群的默认设置。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal nested hidden" id="memberModal" role="dialog" aria-modal="true">
+    <div class="modal-panel">
+      <form id="memberForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">群成员</p>
+            <h2 id="memberModalTitle">添加成员设置</h2>
+          </div>
+          <button class="text-button" type="button" data-close="memberModal">取消</button>
+        </div>
+        <div class="form-grid">
+          <label class="field full">
+            <span>用户 ID</span>
+            <input id="memberId" required maxlength="128" placeholder="请输入用户 ID">
+          </label>
+          <label class="field full">
+            <span>专属人格</span>
+            <select id="memberPersona"></select>
+            <small>选择“沿用群默认人格”即可取消个人覆盖。</small>
+          </label>
+          <label class="field full">
+            <span>回复模型</span>
+            <select id="memberResponseProvider"></select>
+            <small>留空时跟随当前会话；选择沿用群聊人格时也会沿用群聊模型。</small>
+          </label>
+          <div class="auto-persona-editor full hidden" id="memberAutoPersonaFields">
+            <label class="field">
+              <span>人格选择模型</span>
+              <select id="memberSelectorProvider"></select>
+              <small>自动人格会在每次回复前额外调用一次选择模型；固定人格没有这次调用。</small>
+            </label>
+            <label class="field">
+              <span>整体场景说明</span>
+              <textarea id="memberAutoScenario" rows="3" maxlength="2000"></textarea>
+            </label>
+            <div class="field full">
+              <span>候选人格与回复模型</span>
+              <div class="auto-persona-rules" id="memberAutoPersonaRules"></div>
+            </div>
+          </div>
+          <label class="check-field full">
+            <input type="checkbox" id="memberCanSwitch">
+            <span>允许该成员自行切换人格和记忆隔离</span>
+          </label>
+          <label class="field full">
+            <span>LivingMemory 人格记忆隔离</span>
+            <select id="memberLivingMemoryIsolation">
+              <option value="inherit">沿用群聊设置</option>
+              <option value="enabled">开启</option>
+              <option value="disabled">关闭</option>
+            </select>
+          </label>
+          <label class="field full">
+            <span>人格对话记忆隔离</span>
+            <select id="memberMemoryIsolation">
+              <option value="inherit">沿用群聊设置</option>
+              <option value="enabled">开启</option>
+              <option value="disabled">关闭</option>
+            </select>
+            <small>开启后，该成员的专属人格历史不会与群内其他成员混用。</small>
+          </label>
+          <div class="field full">
+            <span>插件权限</span>
+            <select id="memberPluginMode">
+              <option value="inherit">沿用群聊插件权限</option>
+              <option value="all">允许全部插件</option>
+              <option value="allowlist">只允许选中的插件</option>
+              <option value="denylist">允许全部，但禁用选中的插件</option>
+            </select>
+          </div>
+          <div class="plugin-picker full hidden" id="memberPluginPicker"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" type="button" data-close="memberModal">取消</button>
+          <button class="button primary" type="submit">保存成员</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="scheduleModal" role="dialog" aria-modal="true">
+    <div class="modal-panel wide">
+      <form id="scheduleForm">
+        <input type="hidden" id="scheduleId">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">人格自动切换</p>
+            <h2 id="scheduleModalTitle">添加计划</h2>
+          </div>
+          <button class="text-button" type="button" data-close="scheduleModal">取消</button>
+        </div>
+        <div class="form-grid">
+          <label class="field">
+            <span>计划名称</span>
+            <input id="scheduleName" maxlength="100" placeholder="例如：晚间陪伴人格">
+          </label>
+          <label class="check-field">
+            <input type="checkbox" id="scheduleEnabled" checked>
+            <span>启用这个计划</span>
+          </label>
+          <label class="field">
+            <span>切换目标</span>
+            <select id="scheduleTargetType">
+              <option value="private">私聊用户</option>
+              <option value="group">群默认人格</option>
+              <option value="member">群成员专属人格</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>选择目标</span>
+            <select id="scheduleTarget" required></select>
+            <small id="scheduleTargetHint"></small>
+          </label>
+          <label class="field full">
+            <span>执行方式</span>
+            <select id="scheduleMode">
+              <option value="daily">每天指定时间切换</option>
+              <option value="weekly">每周按星期切换</option>
+              <option value="random_interval">每隔一段时间随机切换</option>
+            </select>
+          </label>
+          <div class="form-grid full" id="scheduleDailyFields">
+            <label class="field">
+              <span>每天执行时间</span>
+              <input type="time" id="scheduleDailyTime" value="09:00" required>
+            </label>
+            <label class="field">
+              <span>切换到人格</span>
+              <select id="schedulePersona" required></select>
+            </label>
+          </div>
+          <div class="form-grid full hidden" id="scheduleRandomFields">
+            <label class="field full">
+              <span>随机切换间隔</span>
+              <div class="input-suffix">
+                <input type="number" id="scheduleInterval" min="5" max="10080" value="60">
+                <span>分钟</span>
+              </div>
+              <small>最短 5 分钟，最长 7 天。插件重启后会继续计时。</small>
+            </label>
+            <div class="field full">
+              <span>随机人格范围</span>
+              <div class="persona-picker" id="schedulePersonaPicker"></div>
+              <small>至少选择两个人格；连续执行时会尽量避免重复上一次人格。</small>
+            </div>
+          </div>
+          <div class="form-grid full hidden" id="scheduleWeeklyFields">
+            <label class="field full">
+              <span>每周执行时间</span>
+              <input type="time" id="scheduleWeeklyTime" value="09:00">
+              <small>只会在已启用的星期触发；按服务器本地时区计算。</small>
+            </label>
+            <div class="field full">
+              <span>星期人格安排</span>
+              <div class="weekly-schedule-grid" id="scheduleWeeklyRules"></div>
+              <small>每个星期最多选择 1 个人格；点击“清除”则该星期不执行。</small>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" type="button" data-close="scheduleModal">取消</button>
+          <button class="button primary" type="submit">保存计划</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal nested hidden" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">确认删除</p>
+          <h2 id="deleteModalTitle">删除设置</h2>
+        </div>
+        <button class="text-button" type="button" data-cancel-delete>取消</button>
+      </div>
+      <p class="delete-message" id="deleteModalMessage">确定要删除这条设置吗？</p>
+      <div class="modal-actions">
+        <button class="button" type="button" data-cancel-delete>取消</button>
+        <button class="button danger" type="button" id="confirmDeleteButton">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="sessionImportModal" role="dialog" aria-modal="true" aria-labelledby="sessionImportTitle">
+    <div class="modal-panel wide">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">导入已有会话</p>
+          <h2 id="sessionImportTitle">扫描结果</h2>
+        </div>
+        <button class="text-button" type="button" data-close="sessionImportModal">关闭</button>
+      </div>
+      <p class="import-summary" id="sessionImportSummary">正在扫描 AstrBot 会话管理器。</p>
+      <div class="import-counts" id="sessionImportCounts"></div>
+      <div class="import-preview-layout">
+        <section>
+          <h3>可导入候选</h3>
+          <div class="import-candidate-list" id="sessionImportCandidates"></div>
+        </section>
+        <section>
+          <h3>扫描来源</h3>
+          <div class="import-diagnostic-list" id="sessionImportDiagnostics"></div>
+        </section>
+      </div>
+      <div class="modal-actions">
+        <button class="button" type="button" data-close="sessionImportModal">取消</button>
+        <button class="button primary" type="button" id="confirmImportSessionsButton">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="memeLibraryModal" role="dialog" aria-modal="true" aria-labelledby="memeLibraryTitle">
+    <div class="modal-panel extra-wide">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Meme Manager 兼容</p>
+          <h2 id="memeLibraryTitle">管理人格图库</h2>
+        </div>
+        <button class="text-button" type="button" data-close="memeLibraryModal">关闭</button>
+      </div>
+      <div class="meme-library-toolbar">
+        <label class="field">
+          <span>当前图库</span>
+          <select id="memeLibraryTarget"></select>
+          <div class="row-actions meme-lib-actions">
+            <button class="button small" type="button" id="memeLibRenameButton">重命名当前</button>
+            <button class="button small" type="button" id="memeLibCopyButton">复制当前图库</button>
+            <button class="button small danger" type="button" id="memeLibDeleteButton">删除当前</button>
+          </div>
+          <small>默认图库为 Meme Manager 表情包（只读）。可新建命名图库供人格选用。</small>
+        </label>
+        <div class="library-status">
+          <strong id="memeLibraryStatus">尚未读取</strong>
+          <span id="memeLibraryPath" class="mono"></span>
+        </div>
+        <div class="field meme-lib-manage">
+          <span>新建图库</span>
+          <div class="input-with-button">
+            <input id="memeLibCreateName" maxlength="60" placeholder="新图库名称，如：猫娘库">
+            <button class="button small primary" type="button" id="memeLibCreateButton">新建图库</button>
+          </div>
+        </div>
+        <div class="field meme-add-category">
+          <span>新增分类</span>
+          <div class="input-with-button">
+            <input id="memeNewCategoryName" maxlength="80" placeholder="例如：开心">
+            <button class="button small primary" type="button" id="memeAddCategoryButton">添加</button>
+          </div>
+        </div>
+      </div>
+      <div class="meme-readonly-notice hidden" id="memeReadonlyNotice">
+        默认图库为 Meme Manager 的只读视图，不能在此编辑。请新建命名图库后管理，或把选中表情「复制到」某个命名图库。
+      </div>
+      <div class="meme-default-preview" id="memeDefaultPreview"></div>
+      <details class="meme-persona-map" id="memePersonaMapPanel">
+        <summary>人格使用的图库（点击展开设置）</summary>
+        <div class="persona-map-list" id="memePersonaMapList"></div>
+      </details>
+      <div class="meme-batch-bar hidden" id="memeBatchBar">
+        <div class="meme-batch-left">
+          <strong id="memeBatchCount">已选 0 张</strong>
+          <button class="button small" type="button" id="memeBatchSelectAll">全选</button>
+          <button class="button small" type="button" id="memeBatchInvert">反选</button>
+          <button class="button small" type="button" id="memeBatchClear">清空</button>
+        </div>
+        <div class="meme-batch-right">
+          <div class="input-with-button">
+            <select id="memeBatchMoveTarget" aria-label="移动到分类"></select>
+            <button class="button small" type="button" id="memeBatchMove">移动</button>
+          </div>
+          <div class="input-with-button">
+            <select id="memeBatchCopyTarget" aria-label="复制到人格库"></select>
+            <button class="button small" type="button" id="memeBatchCopy">复制</button>
+          </div>
+          <button class="button small" type="button" id="memeBatchDownload">下载</button>
+          <button class="button small danger" type="button" id="memeBatchDelete">删除</button>
+        </div>
+      </div>
+      <div class="meme-gallery" id="memeGallery"></div>
+      <input id="memeUploadInput" class="hidden" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.zip,image/png,image/jpeg,image/gif,image/webp,application/zip,application/x-zip-compressed" multiple>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="giteeAiimgEffectsModal" role="dialog" aria-modal="true" aria-labelledby="giteeAiimgEffectsTitle">
+    <div class="modal-panel wide">
+      <form id="giteeAiimgEffectsForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Gitee AI Image 兼容</p>
+            <h2 id="giteeAiimgEffectsTitle">配置人格生图效果</h2>
+          </div>
+          <button class="text-button" type="button" data-close="giteeAiimgEffectsModal">关闭</button>
+        </div>
+        <div class="persona-effect-list" id="giteeAiimgEffectsList"></div>
+        <div class="modal-actions">
+          <label class="check-field inline-action">
+            <input type="checkbox" id="giteeAiimgEffectsEnabled">
+            <span>
+              启用按人格追加生图效果
+              <small id="giteeAiimgEffectsStatus">未启用人格生图效果。</small>
+            </span>
+          </label>
+          <div class="row-actions">
+            <button class="button" type="button" data-close="giteeAiimgEffectsModal">取消</button>
+            <button class="button primary" type="submit">保存生图效果设置</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="proactivePromptsModal" role="dialog" aria-modal="true">
+    <div class="modal-panel wide">
+      <form id="proactivePromptsForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Proactive Chat 兼容</p>
+            <h2>人格主动消息要求</h2>
+          </div>
+          <button class="text-button" type="button" data-close="proactivePromptsModal">关闭</button>
+        </div>
+        <div class="persona-effect-list" id="proactivePromptsList"></div>
+        <div class="modal-actions">
+          <button class="button" type="button" data-close="proactivePromptsModal">取消</button>
+          <button class="button primary" type="submit">保存要求</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="lifeScheduleLibraryModal" role="dialog" aria-modal="true">
+    <div class="modal-panel extra-wide">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Life Scheduler 兼容</p>
+          <h2>管理人格日程库</h2>
+        </div>
+        <button class="text-button" type="button" data-close="lifeScheduleLibraryModal">关闭</button>
+      </div>
+      <div class="life-library-toolbar">
+        <label class="field">
+          <span>当前日程库</span>
+          <select id="lifeLibrarySelect"></select>
+        </label>
+        <div class="row-actions life-library-mid-actions">
+          <button class="button small" id="renameLifeLibraryButton" type="button">重命名</button>
+          <button class="button small danger" id="deleteLifeLibraryButton" type="button">删除</button>
+        </div>
+        <label class="field">
+          <span>新日程库名称</span>
+          <div class="input-with-button">
+            <input id="lifeLibraryName" maxlength="60" placeholder="例如：工作日程">
+            <button class="button small primary" id="createLifeLibraryButton" type="button">创建</button>
+          </div>
+        </label>
+      </div>
+      <section class="life-section">
+        <div class="section-heading compact">
+          <h3>创意池</h3>
+          <small class="muted">生成每日日程时，从下面四组里各随机抽取一项作为灵感。</small>
+        </div>
+        <div class="life-pool-grid" id="lifePoolGrid"></div>
+      </section>
+      <section class="life-section">
+        <h3>人格使用的日程库</h3>
+        <div class="persona-map-list" id="lifePersonaMapList"></div>
+      </section>
+      <section class="life-section">
+        <div class="section-heading compact">
+          <h3>每日记录</h3>
+          <button class="button small primary" id="addLifeRecordButton" type="button">添加记录</button>
+        </div>
+        <div class="life-record-list" id="lifeRecordList"></div>
+      </section>
+      <form class="card life-record-form hidden" id="lifeRecordForm">
+        <div class="form-grid">
+          <label class="field"><span>日期</span><input id="lifeRecordDate" type="date" required></label>
+          <label class="field"><span>状态</span><select id="lifeRecordStatus"><option value="ok">正常</option><option value="failed">生成失败</option></select></label>
+          <label class="field full"><span>穿搭风格</span><input id="lifeRecordStyle" maxlength="300"></label>
+          <label class="field full"><span>穿搭</span><textarea id="lifeRecordOutfit" rows="3" maxlength="2000"></textarea></label>
+          <label class="field full"><span>日程内容</span><textarea id="lifeRecordSchedule" rows="6" maxlength="10000"></textarea></label>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="cancelLifeRecordButton" type="button">取消</button>
+          <button class="button primary" type="submit">保存记录</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal nested hidden" id="lifePoolImportModal" role="dialog" aria-modal="true" aria-labelledby="lifePoolImportTitle">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">批量导入</p>
+          <h2 id="lifePoolImportTitle">批量导入条目</h2>
+        </div>
+        <button class="text-button" type="button" data-close="lifePoolImportModal">关闭</button>
+      </div>
+      <label class="field full">
+        <span id="lifePoolImportHint">每行一个条目，也可用逗号分隔；重复项会自动忽略。</span>
+        <textarea id="lifePoolImportText" rows="8" placeholder="探索日&#10;社交日&#10;宅家日"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="button" type="button" data-close="lifePoolImportModal">取消</button>
+        <button class="button primary" type="button" id="lifePoolImportConfirm">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+  <script src="./app.js?v=3.4.9"></script>
+</body>
+</html>

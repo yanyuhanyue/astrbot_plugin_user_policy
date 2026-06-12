@@ -1,0 +1,285 @@
+# 总开关。WebUI 中还有一层运行时总开关，两者都开启时插件才生效。
+enabled: true
+
+# 新版 WebUI 策略文件会自动适配 meme_manager 人格表情包库隔离。
+# 旧 YAML 仅作为首次迁移示例；迁移后请在“兼容状态”页管理图库映射。
+meme_manager_isolation:
+  enabled: true
+  copy_default_descriptions: true
+
+# 所有规则均未命中时使用的档案。
+default_profile: normal
+
+# AstrBot 事件角色与策略档案的映射。用户或群规则的优先级更高。
+role_profiles:
+  admin: admin
+  member: normal
+
+profiles:
+  normal:
+    description: 普通用户
+    # 从 AstrBot WebUI 的“人格设定”中选择。留空表示跟随当前会话人格。
+    persona_id: ""
+    # 留空表示跟随当前会话的 Provider 和模型。
+    provider_id: ""
+    model: ""
+    policy_prompt: 回答应友好、准确、简洁。
+    allowed_plugins:
+      - "*"
+    disabled_plugins: []
+    daily_quotas:
+      image: 5
+    image_style_prefix: ""
+    image_provider: default
+    reply_prefix: ""
+    reply_suffix: ""
+    bypass_group_plugin_restrictions: false
+
+  anime:
+    description: 二次元风格用户
+    persona_id: ""
+    provider_id: ""
+    model: ""
+    policy_prompt: 不要因风格要求影响事实准确性。
+    allowed_plugins:
+      - "*"
+    disabled_plugins: []
+    daily_quotas:
+      image: 10
+    image_style_prefix: 二次元插画风，精致线条，柔和光影，
+    image_provider: siliconflow_anime
+    reply_prefix: ""
+    reply_suffix: ""
+    bypass_group_plugin_restrictions: false
+
+  teacher:
+    description: 学习用户
+    persona_id: ""
+    provider_id: ""
+    model: ""
+    policy_prompt: 先给结论，再分步骤解释，并指出容易混淆的地方。
+    allowed_plugins:
+      - "*"
+    disabled_plugins:
+      - astrbot_plugin_gitee_aiimg
+    daily_quotas:
+      image: 0
+    image_style_prefix: ""
+    image_provider: default
+    reply_prefix: ""
+    reply_suffix: "\n\n有不懂的地方可以继续问。"
+    bypass_group_plugin_restrictions: false
+
+  vip:
+    description: 高权限用户
+    persona_id: ""
+    provider_id: ""
+    model: ""
+    policy_prompt: 主动补充关键背景、限制条件和可执行建议。
+    allowed_plugins:
+      - "*"
+    disabled_plugins: []
+    daily_quotas:
+      image: 50
+    image_style_prefix: 高质量，细节丰富，电影感，
+    image_provider: siliconflow_high
+    reply_prefix: ""
+    reply_suffix: ""
+    bypass_group_plugin_restrictions: false
+
+  admin:
+    description: 管理员
+    persona_id: ""
+    provider_id: ""
+    model: ""
+    policy_prompt: 回答应直接、完整，并优先提供可验证的技术细节。
+    allowed_plugins:
+      - "*"
+    disabled_plugins: []
+    daily_quotas:
+      image: -1
+    image_style_prefix: 高质量，细节丰富，
+    image_provider: default
+    reply_prefix: ""
+    reply_suffix: ""
+    # 管理员档案可绕过群级插件禁用规则，但仍受插件自身黑名单约束。
+    bypass_group_plugin_restrictions: true
+
+  blacklist:
+    description: 黑名单用户
+    persona_id: ""
+    provider_id: ""
+    model: ""
+    policy_prompt: ""
+    allowed_plugins: []
+    disabled_plugins:
+      - "*"
+    daily_quotas:
+      image: 0
+    image_style_prefix: ""
+    image_provider: default
+    reply_prefix: ""
+    reply_suffix: ""
+    bypass_group_plugin_restrictions: false
+
+# 私聊用户映射，同时也作为群聊中的“用户全局规则”。
+private_users: {}
+
+groups: {}
+
+# 全局黑名单。黑名单档案存在时会自动使用 blacklist 档案。
+blacklist_users: []
+
+# 根据命令前缀识别命令属于哪个插件。前缀越长，优先级越高。
+plugin_rules:
+  # 陪伴插件负责关系、记忆和主动行为。此处只用于档案/群级启停，
+  # 不复制它的配置和数据库。
+  astrbot_plugin_private_companion:
+    command_prefixes: []
+    tool_names: []
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: companion
+    enable_rewrite: false
+    rewrite_type: generic
+
+  # 主动聊天的后台调度不经过入站事件；本规则主要用于普通事件钩子范围。
+  astrbot_plugin_proactive_chat:
+    command_prefixes: []
+    tool_names: []
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: proactive
+    enable_rewrite: false
+    rewrite_type: generic
+
+  astrbot_plugin_gitee_aiimg:
+    command_prefixes:
+      - /aiimg
+      - /aiedit
+      - /自拍
+      - /视频
+    tool_names:
+      - aiimg_generate
+      - aiimg_batch_generate
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: true
+    quota_type: image
+    enable_rewrite: true
+    rewrite_type: image
+    inject_provider: true
+    inject_style: true
+
+  # /文生图 的第一个普通参数可能是预设名。这里只注入 provider，
+  # 不在预设名前插入风格词，避免破坏 Gitee AI Image 的预设识别。
+  gitee_aiimg_text_preset:
+    target_plugin: astrbot_plugin_gitee_aiimg
+    command_prefixes:
+      - /文生图
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: true
+    quota_type: image
+    enable_rewrite: true
+    rewrite_type: image
+    inject_provider: true
+    inject_style: false
+
+  # Gitee AI Image 的批量命令形如 /批量4、/批量 4。
+  # 正则中的 amount 会作为本次额度消耗量。
+  gitee_aiimg_batch:
+    target_plugin: astrbot_plugin_gitee_aiimg
+    command_prefixes: []
+    command_patterns:
+      - '^/?批量\s*(?P<amount>\d+)'
+    quota_amount_pattern: '^/?批量\s*(?P<amount>\d+)'
+    quota_amount_group: amount
+    quota_amount_min: 1
+    quota_amount_max: 100
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: true
+    quota_type: image
+    enable_rewrite: false
+    rewrite_type: generic
+
+  # 这些命令只做权限控制，不计入新图生成额度。
+  gitee_aiimg_management:
+    target_plugin: astrbot_plugin_gitee_aiimg
+    command_prefixes:
+      - /文生图预设列表
+      - /自拍参考
+      - /视频预设列表
+      - /预设列表
+      - /重发图片
+      - /改图帮助
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: image
+    enable_rewrite: false
+    rewrite_type: generic
+
+  # 元数据中的真实插件名是 meme_manager，而不是仓库目录名。
+  meme_manager:
+    command_prefixes:
+      - /表情管理
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: meme
+    enable_rewrite: false
+    rewrite_type: generic
+
+  astrbot_plugin_livingmemory:
+    command_prefixes:
+      - /lmem
+    tool_names:
+      - recall_long_term_memory
+      - memorize_long_term_memory
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: memory
+    enable_rewrite: false
+    rewrite_type: generic
+
+  astrbot_plugin_life_scheduler:
+    command_prefixes:
+      - /查看日程
+      - /重写日程
+      - /日程时间
+      - /life show
+      - /life renew
+      - /life time
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: schedule
+    enable_rewrite: false
+    rewrite_type: generic
+
+  example_music_plugin:
+    command_prefixes:
+      - /点歌
+      - /music
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: music
+    enable_rewrite: false
+    rewrite_type: generic
+
+  example_search_plugin:
+    command_prefixes:
+      - /搜索
+      - /search
+    whitelist_users: []
+    blacklist_users: []
+    enable_quota: false
+    quota_type: search
+    enable_rewrite: false
+    rewrite_type: generic

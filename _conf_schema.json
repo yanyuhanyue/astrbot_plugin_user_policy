@@ -1,0 +1,8 @@
+{
+  "enabled": {
+    "description": "启用多人格管理",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后不再应用用户人格、记忆隔离、群聊规则和插件权限。"
+  }
+}
