@@ -467,8 +467,13 @@ class LifeSchedulerPersonaAdapter:
             return
         candidates = [raw]
         parsed = parse_session_identity(raw)
-        if parsed is not None and parsed.is_private:
-            candidates.append(parsed.user_id)
+        if parsed is not None:
+            if parsed.is_private:
+                candidates.append(f"{parsed.platform}:{parsed.user_id}")
+                candidates.append(parsed.user_id)
+            else:
+                candidates.append(f"{parsed.platform}:{parsed.group_id}")
+                candidates.append(parsed.group_id)
         parts = raw.split(":")
         if len(parts) >= 3:
             candidates.append(parts[-1])

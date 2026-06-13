@@ -410,6 +410,7 @@ class PrivateCompanionProactiveAdapter:
         aliases = [raw]
         parsed = parse_session_identity(raw)
         if parsed is not None and parsed.is_private:
+            aliases.append(f"{parsed.platform}:{parsed.user_id}")
             aliases.append(parsed.user_id)
         parts = raw.split(":")
         if len(parts) >= 3:

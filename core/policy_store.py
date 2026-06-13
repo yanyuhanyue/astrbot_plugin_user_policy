@@ -11,7 +11,7 @@ from typing import Any, Callable
 import yaml
 
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 PLUGIN_ACCESS_MODES = {"all", "allowlist", "denylist"}
 MEMBER_ACCESS_MODES = {"all", "allowlist", "denylist"}
 SCHEDULE_TARGET_TYPES = {"private", "group", "member"}
@@ -127,6 +127,10 @@ def default_policy() -> dict[str, Any]:
         "revision": 1,
         "private_users": {},
         "groups": {},
+        "session_import_ignored": {
+            "private_users": [],
+            "groups": [],
+        },
         "schedules": {},
         "meme_manager_isolation": default_meme_isolation(),
         "meme_libraries": {},
@@ -214,6 +218,7 @@ class PolicyStore:
 
         private_users = raw.get("private_users", {})
         groups = raw.get("groups", {})
+        session_import_ignored = raw.get("session_import_ignored", {})
         schedules = raw.get("schedules", {})
         meme_manager_isolation = raw.get("meme_manager_isolation", {})
         meme_libraries = raw.get("meme_libraries", {})
@@ -234,6 +239,8 @@ class PolicyStore:
             raise PolicyConfigError("私聊用户数据必须是对象。")
         if not isinstance(groups, dict):
             raise PolicyConfigError("群聊数据必须是对象。")
+        if not isinstance(session_import_ignored, dict):
+            raise PolicyConfigError("会话导入忽略列表必须是对象。")
         if not isinstance(schedules, dict):
             raise PolicyConfigError("人格计划数据必须是对象。")
         if not isinstance(meme_manager_isolation, dict):
@@ -264,6 +271,10 @@ class PolicyStore:
                 private_users,
                 groups,
             )
+        private_users, groups = cls._migrate_unified_sessions_from_private(
+            private_users,
+            groups,
+        )
 
         result["private_users"] = {
             cls.validate_identifier(user_id, "用户 ID"): cls._normalize_private_rule(
@@ -279,6 +290,9 @@ class PolicyStore:
             for group_id, rule in groups.items()
             if not is_internal_webchat_identifier(group_id)
         }
+        result["session_import_ignored"] = (
+            cls._normalize_session_import_ignored(session_import_ignored)
+        )
         result["schedules"] = {
             cls.validate_identifier(
                 schedule_id,
@@ -1003,6 +1017,94 @@ class PolicyStore:
         return migrated_private, migrated_groups
 
     @classmethod
+    def _migrate_unified_sessions_from_private(
+        cls,
+        private_users: dict[str, Any],
+        groups: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        migrated_private = deepcopy(private_users)
+        migrated_groups = deepcopy(groups)
+        for user_id, rule in list(migrated_private.items()):
+            parsed = cls._parse_unified_identifier(str(user_id))
+            if parsed is None:
+                continue
+            target_id = parsed["scoped_id"]
+            if parsed["target_type"] == "group":
+                migrated_private.pop(user_id, None)
+                if target_id not in migrated_groups:
+                    migrated_groups[target_id] = cls._group_rule_from_private(rule)
+                continue
+            migrated_private.pop(user_id, None)
+            if target_id not in migrated_private:
+                migrated_private[target_id] = rule
+        return migrated_private, migrated_groups
+
+    @classmethod
+    def _group_rule_from_private(cls, rule: Any) -> dict[str, Any]:
+        if not isinstance(rule, dict):
+            rule = {}
+        persona_id = cls._string(
+            str(rule.get("persona_id", "") or ""),
+            "人格 ID",
+        )
+        return {
+            "description": "从私聊列表迁移的群聊",
+            "persona_mode": cls._string(
+                str(
+                    rule.get("persona_mode")
+                    or ("fixed" if persona_id else "default")
+                ),
+                "人格选择模式",
+            ),
+            "persona_id": persona_id,
+            "provider_id": cls._string(
+                str(rule.get("provider_id", "") or ""),
+                "回复模型",
+            ),
+            "auto_persona": deepcopy(rule.get("auto_persona", {})),
+            "memory_isolation": bool(rule.get("memory_isolation", True)),
+            "livingmemory_isolation": bool(
+                rule.get("livingmemory_isolation", True)
+            ),
+            "plugin_access": deepcopy(
+                rule.get("plugin_access", default_plugin_access())
+            ),
+            "member_access": {"mode": "all", "users": []},
+            "policy_admins": [],
+            "users": {},
+        }
+
+    @staticmethod
+    def _parse_unified_identifier(value: str) -> dict[str, str] | None:
+        raw = str(value or "").strip()
+        for message_type in (
+            "FriendMessage",
+            "PrivateMessage",
+            "GroupMessage",
+            "GuildMessage",
+        ):
+            anchor = f":{message_type}:"
+            index = raw.find(anchor)
+            if index < 0:
+                continue
+            target_id = raw[index + len(anchor):].strip()
+            if not target_id:
+                return None
+            lowered = message_type.lower()
+            platform = raw[:index].strip()
+            return {
+                "target_type": (
+                    "group"
+                    if "group" in lowered or "guild" in lowered
+                    else "private"
+                ),
+                "target_id": target_id,
+                "platform": platform,
+                "scoped_id": f"{platform}:{target_id}" if platform else target_id,
+            }
+        return None
+
+    @classmethod
     def _normalize_life_schedule_persona_map(
         cls,
         value: Any,
@@ -1080,6 +1182,21 @@ class PolicyStore:
         return is_internal_webchat_identifier(
             rule.get("user_id")
         ) or is_internal_webchat_identifier(rule.get("group_id"))
+
+    @classmethod
+    def _normalize_session_import_ignored(cls, value: Any) -> dict[str, list[str]]:
+        if not isinstance(value, dict):
+            raise PolicyConfigError("会话导入忽略列表必须是对象。")
+        return {
+            "private_users": cls._normalize_id_list(
+                value.get("private_users", []),
+                "忽略导入私聊用户",
+            ),
+            "groups": cls._normalize_id_list(
+                value.get("groups", []),
+                "忽略导入群聊",
+            ),
+        }
 
     @classmethod
     def _normalize_string_list(

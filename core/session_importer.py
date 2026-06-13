@@ -76,33 +76,43 @@ class SessionImporter:
             )
         for label, manager in managers:
             await self._collect_from_manager(label, manager, candidates)
-        private_users = sorted(
-            (
-                {
-                    "user_id": item.target_id,
-                    "label": item.label or item.target_id,
-                }
-                for item in candidates
-                if item.target_type == "private"
-            ),
-            key=lambda item: item["user_id"],
+        private_users = self._dedupe_candidates(
+            candidates,
+            "private",
+            "user_id",
         )
-        groups = sorted(
-            (
-                {
-                    "group_id": item.target_id,
-                    "label": item.label or item.target_id,
-                }
-                for item in candidates
-                if item.target_type == "group"
-            ),
-            key=lambda item: item["group_id"],
+        groups = self._dedupe_candidates(
+            candidates,
+            "group",
+            "group_id",
         )
         return {
             "private_users": private_users,
             "groups": groups,
             "diagnostics": self.diagnostics,
         }
+
+    @staticmethod
+    def _dedupe_candidates(
+        candidates: set[SessionImportCandidate],
+        target_type: str,
+        id_key: str,
+    ) -> list[dict[str, str]]:
+        by_id: dict[str, str] = {}
+        for item in sorted(
+            (
+                item
+                for item in candidates
+                if item.target_type == target_type
+            ),
+            key=lambda item: (item.target_id, not bool(item.label), item.label),
+        ):
+            if item.target_id not in by_id:
+                by_id[item.target_id] = item.label or item.target_id
+        return [
+            {id_key: target_id, "label": label}
+            for target_id, label in sorted(by_id.items())
+        ]
 
     def _candidate_managers(self) -> list[tuple[str, Any]]:
         result = []
@@ -236,7 +246,14 @@ class SessionImporter:
         title = str(self._first_value(value, ("title", "name", "label")) or "")
         if group_id:
             self._add_candidate("group", group_id, title, candidates)
-        elif user_id and (
+            return
+        if user_id and self._add_from_unified_origin(
+            str(user_id),
+            candidates,
+            label=title,
+        ):
+            return
+        if user_id and (
             not chat_type
             or chat_type
             in {
@@ -277,7 +294,14 @@ class SessionImporter:
         title = str(self._first_attr(value, ("title", "name")) or "")
         if group_id:
             self._add_candidate("group", group_id, title, candidates)
-        elif user_id and (
+            return
+        if user_id and self._add_from_unified_origin(
+            str(user_id),
+            candidates,
+            label=title,
+        ):
+            return
+        if user_id and (
             not chat_type
             or chat_type
             in {
@@ -311,18 +335,20 @@ class SessionImporter:
         self,
         value: str,
         candidates: set[SessionImportCandidate],
-    ) -> None:
+        label: str = "",
+    ) -> bool:
         match = UMO_PATTERN.search(value)
         if not match:
-            return
+            return False
         raw_type = match.group("type").casefold()
         target_type = (
             "group"
             if "group" in raw_type
             else "private"
         )
-        target_id = match.group("id")
-        self._add_candidate(target_type, target_id, "", candidates)
+        target_id = f"{match.group('platform')}:{match.group('id')}"
+        self._add_candidate(target_type, target_id, label, candidates)
+        return True
 
     def _add_candidate(
         self,

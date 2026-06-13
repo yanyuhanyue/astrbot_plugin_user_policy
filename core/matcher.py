@@ -141,6 +141,26 @@ class PolicyMatcher:
                 return candidate
         return decision
 
+    def match_group_aliases(
+        self,
+        identity: EventIdentity,
+        aliases: list[str] | tuple[str, ...],
+    ) -> PolicyDecision:
+        """优先尝试完整会话等精确群聊别名，再回退到群号。"""
+
+        if identity.is_private:
+            return self.match(identity)
+        seen = set()
+        for alias in [*aliases, identity.group_id]:
+            group_id = str(alias or "").strip()
+            if not group_id or group_id in seen:
+                continue
+            seen.add(group_id)
+            candidate = self.match(replace(identity, group_id=group_id))
+            if candidate.policy_configured:
+                return candidate
+        return self.match(identity)
+
     def check_plugin_access(
         self,
         decision: PolicyDecision,

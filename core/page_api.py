@@ -361,6 +361,13 @@ class PluginPageApi:
 
         def mutate(config: dict[str, Any]) -> None:
             config["private_users"][user_id] = rule
+            config.setdefault("session_import_ignored", {}).setdefault(
+                "private_users",
+                [],
+            )
+            ignored = config["session_import_ignored"]["private_users"]
+            if user_id in ignored:
+                ignored.remove(user_id)
 
         config = await self.plugin.update_policy(revision, mutate)
         return self._saved(config, "私聊用户已保存。")
@@ -372,17 +379,28 @@ class PluginPageApi:
             raise PolicyConfigError("策略数据尚未加载。")
         existing_users = store.config.get("private_users", {})
         existing_groups = store.config.get("groups", {})
+        ignored = store.config.get("session_import_ignored", {})
+        ignored_users = {
+            str(item)
+            for item in ignored.get("private_users", [])
+        }
+        ignored_groups = {
+            str(item)
+            for item in ignored.get("groups", [])
+        }
         private_candidates = candidates.get("private_users", [])
         group_candidates = candidates.get("groups", [])
         importable_users = [
             item
             for item in private_candidates
             if item.get("user_id") not in existing_users
+            and str(item.get("user_id", "") or "") not in ignored_users
         ]
         importable_groups = [
             item
             for item in group_candidates
             if item.get("group_id") not in existing_groups
+            and str(item.get("group_id", "") or "") not in ignored_groups
         ]
         return self._ok(
             {
@@ -402,13 +420,30 @@ class PluginPageApi:
         candidates = await self.plugin.session_importer.collect()
 
         def mutate(config: dict[str, Any]) -> None:
+            ignored = config.setdefault("session_import_ignored", {})
+            ignored_users = {
+                str(item)
+                for item in ignored.setdefault("private_users", [])
+            }
+            ignored_groups = {
+                str(item)
+                for item in ignored.setdefault("groups", [])
+            }
             for item in candidates.get("private_users", []):
                 user_id = str(item.get("user_id", "") or "").strip()
-                if user_id and user_id not in config["private_users"]:
+                if (
+                    user_id
+                    and user_id not in ignored_users
+                    and user_id not in config["private_users"]
+                ):
                     config["private_users"][user_id] = imported_private_rule()
             for item in candidates.get("groups", []):
                 group_id = str(item.get("group_id", "") or "").strip()
-                if group_id and group_id not in config["groups"]:
+                if (
+                    group_id
+                    and group_id not in ignored_groups
+                    and group_id not in config["groups"]
+                ):
                     config["groups"][group_id] = imported_group_rule(
                         str(item.get("label", "") or "")
                     )
@@ -442,7 +477,13 @@ class PluginPageApi:
         )
 
         def mutate(config: dict[str, Any]) -> None:
-            config["private_users"].pop(user_id, None)
+            if config["private_users"].pop(user_id, None) is not None:
+                ignored = config.setdefault(
+                    "session_import_ignored",
+                    {},
+                ).setdefault("private_users", [])
+                if user_id not in ignored:
+                    ignored.append(user_id)
 
         config = await self.plugin.update_policy(revision, mutate)
         return self._saved(config, "私聊用户已删除。")
@@ -461,6 +502,13 @@ class PluginPageApi:
 
         def mutate(config: dict[str, Any]) -> None:
             config["groups"][group_id] = rule
+            config.setdefault("session_import_ignored", {}).setdefault(
+                "groups",
+                [],
+            )
+            ignored = config["session_import_ignored"]["groups"]
+            if group_id in ignored:
+                ignored.remove(group_id)
 
         config = await self.plugin.update_policy(revision, mutate)
         return self._saved(config, "群聊设置已保存。")
@@ -474,7 +522,13 @@ class PluginPageApi:
         )
 
         def mutate(config: dict[str, Any]) -> None:
-            config["groups"].pop(group_id, None)
+            if config["groups"].pop(group_id, None) is not None:
+                ignored = config.setdefault(
+                    "session_import_ignored",
+                    {},
+                ).setdefault("groups", [])
+                if group_id not in ignored:
+                    ignored.append(group_id)
 
         config = await self.plugin.update_policy(revision, mutate)
         return self._saved(config, "群聊设置已删除。")
