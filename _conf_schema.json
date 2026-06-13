@@ -4,5 +4,11 @@
     "type": "bool",
     "default": true,
     "hint": "关闭后不再应用用户人格、记忆隔离、群聊规则和插件权限。"
+  },
+  "log_policy_match": {
+    "description": "记录策略匹配日志",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后在日志中打印每条消息命中的人格规则与插件范围过滤情况，便于排查。"
   }
 }
