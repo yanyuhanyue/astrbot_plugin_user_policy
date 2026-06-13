@@ -1,7 +1,7 @@
 name: astrbot_plugin_user_policy
 display_name: 多人格管理
 desc: 为私聊用户、群聊和群成员自由切换人格，并管理模型、记忆隔离、人格计划与插件权限。
-version: v3.4.11
+version: v3.4.12
 author: 烟雨寒月
 repo: "https://github.com/yanyuhanyue/astrbot_plugin_user_policy"
 astrbot_version: ">=4.24.2,<5"

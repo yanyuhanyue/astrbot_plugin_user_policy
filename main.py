@@ -59,7 +59,7 @@ PLUGIN_NAME = "astrbot_plugin_user_policy"
     PLUGIN_NAME,
     "烟雨寒月",
     "为私聊用户、群聊和群成员自由切换人格并管理相关策略。",
-    "3.4.11",
+    "3.4.12",
 )
 class UserPolicyPlugin(Star):
     """轻量、低冲突的用户人格与插件权限层。"""
@@ -111,6 +111,7 @@ class UserPolicyPlugin(Star):
                 data_dir,
                 self.plugin_root / "data" / "config.yaml",
             )
+            is_first_policy_load = not self.store.policy_path.exists()
             self.memory_isolation = MemoryIsolationManager(
                 self.context,
                 data_dir,
@@ -156,7 +157,12 @@ class UserPolicyPlugin(Star):
                     restored,
                 )
             self._reload_runtime()
-            await self.import_existing_sessions()
+            if (
+                is_first_policy_load
+                and not self.store.config.get("private_users")
+                and not self.store.config.get("groups")
+            ):
+                await self.import_existing_sessions()
             self.meme_manager_adapter.configure()
             self.gitee_aiimg_adapter.configure()
             self.livingmemory_adapter.configure()
@@ -185,17 +191,28 @@ class UserPolicyPlugin(Star):
 
         existing_users = self.store.config.get("private_users", {})
         existing_groups = self.store.config.get("groups", {})
+        ignored = self.store.config.get("session_import_ignored", {})
+        ignored_users = {
+            str(item)
+            for item in ignored.get("private_users", [])
+        }
+        ignored_groups = {
+            str(item)
+            for item in ignored.get("groups", [])
+        }
         users_to_add = [
             item
             for item in candidates.get("private_users", [])
             if str(item.get("user_id", "") or "").strip()
             and str(item.get("user_id", "") or "").strip() not in existing_users
+            and str(item.get("user_id", "") or "").strip() not in ignored_users
         ]
         groups_to_add = [
             item
             for item in candidates.get("groups", [])
             if str(item.get("group_id", "") or "").strip()
             and str(item.get("group_id", "") or "").strip() not in existing_groups
+            and str(item.get("group_id", "") or "").strip() not in ignored_groups
         ]
         added = {
             "private_users": len(users_to_add),
@@ -650,8 +667,7 @@ class UserPolicyPlugin(Star):
                 "你没有查看当前群人格的权限，请联系管理员授权。"
             )
             return
-        group_id = self._event_group_id(event)
-        group_rule = self._group_rule(group_id)
+        group_rule = self._group_rule_for_event(event)
         persona_id = str(group_rule.get("persona_id", "") or "")
         if group_rule.get("persona_mode") == "auto":
             current = ""
@@ -690,7 +706,7 @@ class UserPolicyPlugin(Star):
             )
             return
         if requested.casefold() in {"自动", "auto"}:
-            group_rule = self._group_rule(self._event_group_id(event))
+            group_rule = self._group_rule_for_event(event)
             if len(
                 group_rule.get("auto_persona", {}).get("persona_ids", [])
             ) < 2:
@@ -699,7 +715,7 @@ class UserPolicyPlugin(Star):
                 )
                 return
             await self._set_group_persona(
-                self._event_group_id(event),
+                self._group_policy_id_for_event(event),
                 "",
                 "auto",
             )
@@ -711,7 +727,7 @@ class UserPolicyPlugin(Star):
             return
         try:
             await self._set_group_persona(
-                self._event_group_id(event),
+                self._group_policy_id_for_event(event),
                 persona_id,
                 "fixed",
             )
@@ -732,7 +748,7 @@ class UserPolicyPlugin(Star):
             return
         try:
             await self._set_group_persona(
-                self._event_group_id(event),
+                self._group_policy_id_for_event(event),
                 "",
                 "default",
             )
@@ -861,10 +877,15 @@ class UserPolicyPlugin(Star):
             chat_type="private" if is_private else "group",
             role="admin" if event.is_admin() else "member",
         )
-        if not is_private:
-            return self.matcher.match(identity)
-        aliases = self._private_event_aliases(event)
-        return self.matcher.match_private_aliases(identity, aliases)
+        if is_private:
+            return self.matcher.match_private_aliases(
+                identity,
+                self._private_event_aliases(event),
+            )
+        return self.matcher.match_group_aliases(
+            identity,
+            self._group_event_aliases(event),
+        )
 
     def _get_or_create_decision(
         self,
@@ -1409,7 +1430,7 @@ class UserPolicyPlugin(Star):
 
     async def _can_manage_group(self, event: AstrMessageEvent) -> bool:
         user_id = self._event_user_id(event)
-        group_rule = self._group_rule(self._event_group_id(event))
+        group_rule = self._group_rule_for_event(event)
 
         raw = getattr(
             getattr(event, "message_obj", None),
@@ -1448,6 +1469,25 @@ class UserPolicyPlugin(Star):
             return {}
         rule = self.store.config.get("groups", {}).get(group_id, {})
         return rule if isinstance(rule, dict) else {}
+
+    def _group_rule_for_event(self, event: AstrMessageEvent) -> dict[str, Any]:
+        if self.store is None:
+            return {}
+        groups = self.store.config.get("groups", {})
+        for group_id in self._group_event_aliases(event):
+            rule = groups.get(group_id, {})
+            if isinstance(rule, dict):
+                return rule
+        return self._group_rule(self._event_group_id(event))
+
+    def _group_policy_id_for_event(self, event: AstrMessageEvent) -> str:
+        if self.store is None:
+            return self._event_group_id(event)
+        groups = self.store.config.get("groups", {})
+        for group_id in self._group_event_aliases(event):
+            if group_id in groups:
+                return group_id
+        return self._event_group_id(event)
 
     @staticmethod
     def _empty_group_rule() -> dict[str, Any]:
@@ -1581,6 +1621,26 @@ class UserPolicyPlugin(Star):
             self._append_identity_alias(aliases, getattr(sender, attr, ""))
         return aliases
 
+    def _group_event_aliases(self, event: AstrMessageEvent) -> list[str]:
+        aliases = []
+        self._append_identity_alias(
+            aliases,
+            self._event_unified_msg_origin(event),
+        )
+        for attr in (
+            "session_id",
+            "session",
+            "conversation_id",
+            "group_id",
+        ):
+            self._append_identity_alias(
+                aliases,
+                getattr(getattr(event, "message_obj", None), attr, ""),
+            )
+        group = getattr(getattr(event, "message_obj", None), "group", None)
+        self._append_identity_alias(aliases, getattr(group, "group_id", ""))
+        return aliases
+
     @staticmethod
     def _append_identity_alias(aliases: list[str], value: Any) -> None:
         raw = str(value or "").strip()
@@ -1588,8 +1648,13 @@ class UserPolicyPlugin(Star):
             return
         candidates = [raw]
         parsed = parse_session_identity(raw)
-        if parsed is not None and parsed.is_private:
-            candidates.append(parsed.user_id)
+        if parsed is not None:
+            if parsed.is_private:
+                candidates.append(f"{parsed.platform}:{parsed.user_id}")
+                candidates.append(parsed.user_id)
+            else:
+                candidates.append(f"{parsed.platform}:{parsed.group_id}")
+                candidates.append(parsed.group_id)
         parts = raw.split(":")
         if len(parts) >= 3:
             candidates.append(parts[-1])

@@ -313,6 +313,7 @@ class ProactiveChatPersonaAdapter:
         candidates = [raw]
         parsed = parse_session_identity(raw)
         if parsed is not None and parsed.is_private:
+            candidates.append(f"{parsed.platform}:{parsed.user_id}")
             candidates.append(parsed.user_id)
         parts = raw.split(":")
         if len(parts) >= 3:
