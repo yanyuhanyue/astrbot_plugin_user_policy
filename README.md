@@ -7,7 +7,7 @@
 为不同私聊用户、群聊和群成员自由切换人格
 
 <p>
-  <img src="https://img.shields.io/badge/Version-3.4.10-brightgreen" alt="Version 3.4.10">
+  <img src="https://img.shields.io/badge/Version-3.4.11-brightgreen" alt="Version 3.4.11">
   <img src="https://img.shields.io/badge/AstrBot-%3E%3D4.24.2%2C%3C5-orange" alt="AstrBot >=4.24.2,<5">
   <img src="https://img.shields.io/badge/WebUI-Plugin%20Pages-blue" alt="AstrBot Plugin Pages">
 </p>
@@ -282,6 +282,8 @@ Private Companion 的图片识别由其自身直接调用视觉提供商。原�
 | `/群切换人格 自动` | 使用群聊自动人格配置 |
 | `/群恢复人格` | 恢复群聊跟随 AstrBot 会话默认人格 |
 
+查询类命令默认不公开，只有 AstrBot 管理员或已在规则中授权“允许自行切换人格”的用户可用。需要所有用户都能查看时，可在插件配置中开启“公开查询类聊天指令”。
+
 以下身份可以修改群默认人格：
 
 - AstrBot 管理员
@@ -308,7 +310,7 @@ Private Companion 的图片识别由其自身直接调用视觉提供商。原�
 
 `32` 是策略数据的配置修订号，不是插件版本。每次成功保存策略后修订号都会递增，用于阻止旧页面覆盖其他页面刚保存的内容。
 
-插件版本请查看插件信息中的 `3.4.10`。
+插件版本请查看插件信息中的 `3.4.11`。
 
 ### 为什么修改 AstrBot 配置默认人格后，回复还是旧人格？
 

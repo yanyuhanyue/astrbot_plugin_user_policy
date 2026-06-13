@@ -59,7 +59,7 @@ PLUGIN_NAME = "astrbot_plugin_user_policy"
     PLUGIN_NAME,
     "烟雨寒月",
     "为私聊用户、群聊和群成员自由切换人格并管理相关策略。",
-    "3.4.10",
+    "3.4.11",
 )
 class UserPolicyPlugin(Star):
     """轻量、低冲突的用户人格与插件权限层。"""
@@ -321,6 +321,15 @@ class UserPolicyPlugin(Star):
     async def list_personas_command(self, event: AstrMessageEvent):
         """列出 AstrBot 人格设定中的可用人格。"""
 
+        if not self._is_available():
+            yield event.plain_result("多人格管理插件尚未成功加载。")
+            return
+        decision = self._get_or_create_decision(event)
+        if not self._can_use_query_command(event, decision):
+            yield event.plain_result(
+                "你没有查看人格列表的权限，请联系管理员授权。"
+            )
+            return
         personas = await self.personas.list_personas()
         if not personas:
             yield event.plain_result("当前没有可用的 AstrBot 人格。")
@@ -341,6 +350,11 @@ class UserPolicyPlugin(Star):
             yield event.plain_result("多人格管理插件尚未成功加载。")
             return
         decision = self._get_or_create_decision(event)
+        if not self._can_use_query_command(event, decision):
+            yield event.plain_result(
+                "你没有查看当前人格的权限，请联系管理员授权。"
+            )
+            return
         if decision.persona_mode == "auto":
             current = decision.persona_id
             if not current and self.auto_persona is not None:
@@ -448,6 +462,11 @@ class UserPolicyPlugin(Star):
             yield event.plain_result("多人格管理插件尚未成功加载。")
             return
         decision = self._get_or_create_decision(event)
+        if not decision.allow_persona_switch and not event.is_admin():
+            yield event.plain_result(
+                "你没有重置会话人格的权限，请联系管理员在多人格管理页面授权。"
+            )
+            return
         if decision.persona_id or decision.persona_mode == "auto":
             yield event.plain_result(
                 "当前仍命中本插件固定/自动人格规则。请先在 WebUI 修改规则，"
@@ -483,6 +502,11 @@ class UserPolicyPlugin(Star):
             "memory_isolation",
         )
         if not requested:
+            if not self._can_use_query_command(event, decision):
+                yield event.plain_result(
+                    "你没有查看记忆隔离的权限，请联系管理员授权。"
+                )
+                return
             status = "开启" if decision.memory_isolation else "关闭"
             yield event.plain_result(
                 f"当前人格对话记忆隔离：{status}\n"
@@ -576,6 +600,11 @@ class UserPolicyPlugin(Star):
             "livingmemory_isolation",
         )
         if not requested:
+            if not self._can_use_query_command(event, decision):
+                yield event.plain_result(
+                    "你没有查看长期记忆隔离的权限，请联系管理员授权。"
+                )
+                return
             status = "开启" if decision.livingmemory_isolation else "关闭"
             yield event.plain_result(
                 f"当前 LivingMemory 人格记忆隔离：{status}"
@@ -612,11 +641,19 @@ class UserPolicyPlugin(Star):
         if event.is_private_chat():
             yield event.plain_result("该指令只能在群聊中使用。")
             return
+        if not self._is_available():
+            yield event.plain_result("多人格管理插件尚未成功加载。")
+            return
+        decision = self._get_or_create_decision(event)
+        if not self._can_use_query_command(event, decision):
+            yield event.plain_result(
+                "你没有查看当前群人格的权限，请联系管理员授权。"
+            )
+            return
         group_id = self._event_group_id(event)
         group_rule = self._group_rule(group_id)
         persona_id = str(group_rule.get("persona_id", "") or "")
         if group_rule.get("persona_mode") == "auto":
-            decision = self._get_or_create_decision(event)
             current = ""
             if self.auto_persona is not None:
                 current = str(
@@ -885,6 +922,15 @@ class UserPolicyPlugin(Star):
             decision.persona_id or "跟随会话",
             decision.match_source,
         )
+
+    def _can_use_query_command(
+        self,
+        event: AstrMessageEvent,
+        decision: PolicyDecision,
+    ) -> bool:
+        if bool(self._setting("public_query_commands", False)):
+            return True
+        return bool(event.is_admin() or decision.allow_persona_switch)
 
     def _apply_event_plugin_scope(
         self,

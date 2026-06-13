@@ -10,5 +10,11 @@
     "type": "bool",
     "default": false,
     "hint": "开启后在日志中打印每条消息命中的人格规则与插件范围过滤情况，便于排查。"
+  },
+  "public_query_commands": {
+    "description": "公开查询类聊天指令",
+    "type": "bool",
+    "default": false,
+    "hint": "关闭时，/人格列表、/当前人格、/记忆隔离、/长期记忆隔离、/群当前人格 等查询指令仅管理员或已授权自助切换人格的用户可用。"
   }
 }
