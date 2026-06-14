@@ -607,6 +607,183 @@ td { font-size: 14px; }
 .meme-dropzone small { font-size: 11px; }
 .empty.compact { padding: 18px 12px; }
 
+.smart-image-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.smart-pending-panel,
+.smart-library-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+.smart-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.smart-target-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 700;
+}
+.smart-global-tags-panel {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+.smart-global-tags-panel textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+.smart-global-tags-panel .smart-tag-summary {
+  margin: 10px 0;
+}
+.smart-image-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  max-height: min(55vh, 560px);
+  overflow-y: auto;
+}
+.smart-image-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.smart-image-card.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary) inset;
+  background: var(--primary-soft);
+}
+.smart-image-card img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+.smart-image-card strong,
+.smart-image-card small { overflow-wrap: anywhere; }
+.smart-image-card small { color: var(--muted); }
+.smart-tag-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  min-height: 30px;
+}
+.smart-tag-summary span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+.smart-image-card textarea {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  font: inherit;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface);
+}
+.smart-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.smart-tag-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.4fr);
+  gap: 20px;
+}
+.smart-tag-preview {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+.smart-tag-preview img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.smart-tag-preview strong,
+.smart-tag-preview small {
+  overflow-wrap: anywhere;
+}
+.smart-tag-fields {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+.smart-tag-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.smart-tag-target-list .smart-target-choice {
+  background: var(--surface);
+}
+.smart-common-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  min-height: 28px;
+}
+.smart-common-tag-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+.smart-common-tag-choice input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
 .auto-persona-editor {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -778,6 +955,10 @@ td { font-size: 14px; }
   .meme-default-preview { display: grid; }
   .meme-default-preview .row-actions { justify-content: flex-start; }
   .meme-image-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .smart-image-toolbar { grid-template-columns: 1fr; }
+  .smart-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .smart-tag-editor { grid-template-columns: 1fr; }
+  .smart-tag-preview img { max-height: 280px; }
   .modal { padding: 10px; align-items: end; }
   .modal-panel, .modal-panel.wide, .modal-panel.extra-wide { width: 100%; max-height: calc(100vh - 20px); border-radius: 16px 16px 0 0; }
   .actions-column { width: auto; }

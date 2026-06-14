@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>多人格管理</title>
-  <link rel="stylesheet" href="./style.css?v=3.4.13">
+  <link rel="stylesheet" href="./style.css?v=3.5.2">
 </head>
 <body>
   <main class="app">
@@ -633,6 +633,159 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="smartImageLibraryModal" role="dialog" aria-modal="true" aria-labelledby="smartImageLibraryTitle">
+    <div class="modal-panel extra-wide">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Smart ImageChat Hub 兼容</p>
+          <h2 id="smartImageLibraryTitle">管理智能图片人格图库</h2>
+        </div>
+        <button class="text-button" type="button" data-close="smartImageLibraryModal">关闭</button>
+      </div>
+      <div class="smart-image-toolbar">
+        <label class="field">
+          <span>当前人格图库</span>
+          <select id="smartImageLibrarySelect"></select>
+          <div class="row-actions">
+            <button class="button small" type="button" id="smartImageRenameButton">重命名</button>
+            <button class="button small" type="button" id="smartImageCopyButton">复制</button>
+            <button class="button small danger" type="button" id="smartImageDeleteButton">删除</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>新建图库</span>
+          <div class="input-with-button">
+            <input id="smartImageCreateName" maxlength="60" placeholder="例如：猫娘图片库">
+            <button class="button small primary" type="button" id="smartImageCreateButton">创建</button>
+          </div>
+          <small>同一内容只在共享池保存一份，每个图库拥有独立标签。</small>
+        </label>
+        <div class="library-status">
+          <strong id="smartImageLibraryStatus">尚未读取</strong>
+          <span id="smartImageRuntimeStatus">等待运行时适配</span>
+        </div>
+        <div class="field">
+          <span>图库操作</span>
+          <div class="row-actions">
+            <button class="button small primary" type="button" id="smartImageUploadButton">上传图片或 ZIP</button>
+            <button class="button small" type="button" id="smartImageBackupButton">备份全部图库</button>
+          </div>
+        </div>
+      </div>
+      <details class="meme-persona-map" open>
+        <summary>人格使用的智能图片库</summary>
+        <div class="persona-map-list" id="smartImagePersonaMapList"></div>
+      </details>
+      <details class="smart-global-tags-panel" open>
+        <summary>公用特征标签</summary>
+        <p class="muted">会自动读取 Smart ImageChat Hub 已有的公用标签；这里填写的是本插件额外补充的标签。</p>
+        <label class="field">
+          <span>本插件额外公用标签</span>
+          <textarea id="smartImageGlobalTagsInput" rows="4" placeholder="每行一个，或使用逗号分隔"></textarea>
+        </label>
+        <span class="field-label">Smart ImageChat Hub 已有公用标签</span>
+        <div class="smart-tag-summary" id="smartImageSmartGlobalTagsPreview"></div>
+        <span class="field-label">最终可选公用标签</span>
+        <div class="smart-tag-summary" id="smartImageGlobalTagsPreview"></div>
+        <div class="row-actions">
+          <button class="button small primary" type="button" id="smartImageGlobalTagsSaveButton">保存额外公用标签</button>
+        </div>
+      </details>
+      <section class="smart-pending-panel">
+        <div class="section-heading compact">
+          <div>
+            <h3>自动偷图缓冲池</h3>
+            <small class="muted">多选图片和目标人格库后分发；默认保留 Smart ImageChat Hub 原缓冲图片。</small>
+          </div>
+          <button class="button small" type="button" id="smartPendingRefreshButton">刷新缓冲池</button>
+        </div>
+        <div class="smart-target-list" id="smartPendingTargetList"></div>
+        <label class="check-field compact">
+          <input type="checkbox" id="smartPendingInheritTags" checked>
+          <span>继承缓冲项已有标签（当前版本通常没有自动标签时会留空）</span>
+        </label>
+        <div class="smart-image-grid" id="smartPendingGrid"></div>
+        <div class="group-actions">
+          <button class="button small" type="button" id="smartPendingCopyButton">复制到所选图库</button>
+          <button class="button small primary" type="button" id="smartPendingMoveButton">移动到所选图库</button>
+          <button class="button small danger" type="button" id="smartPendingDeleteButton">删除选中图片</button>
+        </div>
+      </section>
+      <section class="smart-library-panel">
+        <div class="section-heading compact">
+          <div>
+            <h3>当前图库图片</h3>
+            <small class="muted">标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。</small>
+          </div>
+        </div>
+        <div class="smart-image-grid" id="smartImageGrid"></div>
+      </section>
+      <input id="smartImageUploadInput" class="hidden" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.zip,image/png,image/jpeg,image/gif,image/webp,application/zip,application/x-zip-compressed" multiple>
+    </div>
+  </div>
+
+  <div class="modal nested hidden" id="smartImageNameModal" role="dialog" aria-modal="true" aria-labelledby="smartImageNameTitle">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">智能图片人格图库</p>
+          <h2 id="smartImageNameTitle">重命名图库</h2>
+        </div>
+        <button class="text-button" type="button" data-close="smartImageNameModal">关闭</button>
+      </div>
+      <label class="field">
+        <span>图库名称</span>
+        <input id="smartImageNameInput" maxlength="60" autocomplete="off">
+        <small id="smartImageNameHint">修改后只改变显示名称。</small>
+      </label>
+      <div class="modal-actions">
+        <button class="button" type="button" data-close="smartImageNameModal">取消</button>
+        <button class="button primary" type="button" id="smartImageNameConfirmButton">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal nested hidden" id="smartImageTagModal" role="dialog" aria-modal="true" aria-labelledby="smartImageTagTitle">
+    <div class="modal-panel wide">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">编辑标签</p>
+          <h2 id="smartImageTagTitle">图片标签</h2>
+        </div>
+        <button class="text-button" type="button" data-close="smartImageTagModal">关闭</button>
+      </div>
+      <div class="smart-tag-editor">
+        <div class="smart-tag-preview">
+          <img id="smartImageTagPreview" alt="待编辑图片预览">
+          <strong id="smartImageTagFilename">尚未选择图片</strong>
+          <small class="mono" id="smartImageTagHash"></small>
+        </div>
+        <div class="smart-tag-fields">
+          <label class="field">
+            <span>当前人格图库标签</span>
+            <textarea id="smartImageTagText" rows="7" placeholder="每行一个，或使用逗号分隔"></textarea>
+            <small>标签只属于当前人格图库，不会自动影响其他图库。</small>
+          </label>
+          <div class="field">
+            <span>附加到本图的公用特征标签</span>
+            <div class="smart-common-tag-list" id="smartImageCommonTagList"></div>
+            <small>勾选后会写入当前图库这张图片的标签；不勾选的公用标签不会自动添加。</small>
+          </div>
+          <div class="field">
+            <span>将当前标签套用到其他图库的相同图片</span>
+            <div class="smart-tag-target-list" id="smartImageTagTargetList"></div>
+            <small>仅显示包含相同 SHA-256 图片的图库，可同时选择多个。</small>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="button" type="button" data-close="smartImageTagModal">取消</button>
+        <button class="button" type="button" id="smartImageTagSaveButton">仅保存当前图库</button>
+        <button class="button primary" type="button" id="smartImageTagApplyButton">保存并套用到所选图库</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal hidden" id="proactivePromptsModal" role="dialog" aria-modal="true">
     <div class="modal-panel wide">
       <form id="proactivePromptsForm">
@@ -733,6 +886,6 @@
   </div>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="./app.js?v=3.4.13"></script>
+  <script src="./app.js?v=3.5.2"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import base64
 from datetime import date as date_type
 from functools import wraps
 from typing import Any
@@ -11,6 +12,7 @@ from uuid import uuid4
 from quart import request
 
 from .meme_library import MemePersonaLibraryManager
+from .smart_image_library import SmartImagePersonaLibraryManager
 from .policy_store import (
     MEME_DEFAULT_LIBRARY_ID,
     PolicyConfigError,
@@ -221,6 +223,126 @@ class PluginPageApi:
                 ["POST"],
                 "设置人格表情库映射",
             ),
+            (
+                "smart-image/bootstrap",
+                self.smart_image_bootstrap,
+                ["GET"],
+                "读取智能图片人格图库",
+            ),
+            (
+                "smart-image/library/load",
+                self.load_smart_image_library,
+                ["POST"],
+                "读取智能图片人格图库成员",
+            ),
+            (
+                "smart-image/image/preview",
+                self.smart_image_preview,
+                ["POST"],
+                "读取智能图片预览",
+            ),
+            (
+                "smart-image/pending/preview",
+                self.smart_image_pending_preview,
+                ["POST"],
+                "读取智能图片缓冲池预览",
+            ),
+            (
+                "smart-image/library/create",
+                self.create_smart_image_library,
+                ["POST"],
+                "创建智能图片人格图库",
+            ),
+            (
+                "smart-image/library/rename",
+                self.rename_smart_image_library,
+                ["POST"],
+                "重命名智能图片人格图库",
+            ),
+            (
+                "smart-image/library/delete",
+                self.delete_smart_image_library,
+                ["POST"],
+                "删除智能图片人格图库",
+            ),
+            (
+                "smart-image/library/copy",
+                self.copy_smart_image_library,
+                ["POST"],
+                "复制智能图片人格图库",
+            ),
+            (
+                "smart-image/images/upload",
+                self.upload_smart_images,
+                ["POST"],
+                "上传智能图片人格图库图片",
+            ),
+            (
+                "smart-image/images/delete",
+                self.delete_smart_images,
+                ["POST"],
+                "删除智能图片人格图库图片",
+            ),
+            (
+                "smart-image/images/tags/save",
+                self.save_smart_image_tags,
+                ["POST"],
+                "保存智能图片人格标签",
+            ),
+            (
+                "smart-image/images/caption",
+                self.caption_smart_image,
+                ["POST"],
+                "生成智能图片人格标签",
+            ),
+            (
+                "smart-image/images/tags/apply",
+                self.apply_smart_image_tags,
+                ["POST"],
+                "套用智能图片人格标签",
+            ),
+            (
+                "smart-image/pending/snapshot",
+                self.smart_image_pending_snapshot,
+                ["GET"],
+                "读取 Smart ImageChat Hub 缓冲图库",
+            ),
+            (
+                "smart-image/pending/distribute",
+                self.distribute_smart_image_pending,
+                ["POST"],
+                "分发 Smart ImageChat Hub 缓冲图片",
+            ),
+            (
+                "smart-image/pending/delete",
+                self.delete_smart_image_pending,
+                ["POST"],
+                "删除 Smart ImageChat Hub 缓冲图片",
+            ),
+            (
+                "smart-image/persona-map/save",
+                self.save_smart_image_persona_map,
+                ["POST"],
+                "保存智能图片人格图库映射",
+            ),
+            (
+                "smart-image/global-tags/save",
+                self.save_smart_image_global_tags,
+                ["POST"],
+                "保存智能图片公用特征标签",
+            ),
+            (
+                "smart-image/isolation/save",
+                self.save_smart_image_isolation,
+                ["POST"],
+                "保存智能图片人格图库隔离设置",
+            ),
+            (
+                "smart-image/backup",
+                self.backup_smart_image_libraries,
+                ["POST"],
+                "备份智能图片人格图库",
+            ),
         )
         for endpoint, handler, methods, description in routes:
             self.plugin.context.register_web_api(
@@ -317,6 +439,22 @@ class PluginPageApi:
                 "meme_persona_library_map": config.get(
                     "meme_persona_library_map",
                     {},
+                ),
+                "smart_image_isolation": config.get(
+                    "smart_image_isolation",
+                    {},
+                ),
+                "smart_image_libraries": config.get(
+                    "smart_image_libraries",
+                    {},
+                ),
+                "smart_image_persona_library_map": config.get(
+                    "smart_image_persona_library_map",
+                    {},
+                ),
+                "smart_image_global_tags": config.get(
+                    "smart_image_global_tags",
+                    [],
                 ),
                 "gitee_aiimg_persona_effects": config.get(
                     "gitee_aiimg_persona_effects",
@@ -1064,6 +1202,498 @@ class PluginPageApi:
             }
         )
 
+    async def smart_image_bootstrap(self):
+        manager = self._smart_image_manager()
+        store = self.plugin.store
+        if store is None:
+            raise PolicyConfigError("策略数据尚未加载。")
+        try:
+            personas = await self.plugin.personas.list_personas()
+        except Exception:
+            personas = []
+        adapter = getattr(self.plugin, "smart_imagechat_adapter", None)
+        tag_payload = self._smart_image_tag_payload(store.config, adapter)
+        return self._ok(
+            {
+                "revision": store.revision,
+                "isolation": store.config.get("smart_image_isolation", {}),
+                "libraries": store.config.get("smart_image_libraries", {}),
+                "persona_library_map": store.config.get(
+                    "smart_image_persona_library_map",
+                    {},
+                ),
+                **tag_payload,
+                "targets": manager.targets(),
+                "personas": personas,
+                "status": adapter.report() if adapter is not None else {},
+            }
+        )
+
+    async def load_smart_image_library(self):
+        payload = await self._json_payload()
+        return self._ok(
+            self._smart_image_manager().describe(payload.get("library_id"))
+        )
+
+    async def smart_image_preview(self):
+        payload = await self._json_payload()
+        return self._ok(
+            self._smart_image_manager().image_payload(payload.get("hash"))
+        )
+
+    async def smart_image_pending_preview(self):
+        payload = await self._json_payload()
+        return self._ok(
+            self._smart_image_manager().pending_image_payload(
+                payload.get("image_id")
+            )
+        )
+
+    async def create_smart_image_library(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        name = SmartImagePersonaLibraryManager.validate_library_name(
+            payload.get("name")
+        )
+        library_id = uuid4().hex
+
+        def mutate(config: dict[str, Any]) -> None:
+            config.setdefault("smart_image_libraries", {})[library_id] = {
+                "name": name,
+                "images": {},
+            }
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            f"智能图片图库「{name}」已创建。",
+            library_id=library_id,
+        )
+
+    async def rename_smart_image_library(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_id = str(payload.get("library_id", "") or "").strip()
+        name = SmartImagePersonaLibraryManager.validate_library_name(
+            payload.get("name")
+        )
+
+        def mutate(config: dict[str, Any]) -> None:
+            library = config.setdefault("smart_image_libraries", {}).get(
+                library_id
+            )
+            if not isinstance(library, dict):
+                raise PolicyConfigError("智能图片人格图库不存在。")
+            library["name"] = name
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(config, "智能图片图库已重命名。")
+
+    async def delete_smart_image_library(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_id = str(payload.get("library_id", "") or "").strip()
+
+        def mutate(config: dict[str, Any]) -> None:
+            libraries = config.setdefault("smart_image_libraries", {})
+            if library_id not in libraries:
+                raise PolicyConfigError("智能图片人格图库不存在。")
+            libraries.pop(library_id)
+
+        config = await self.plugin.update_policy(revision, mutate)
+        removed = self._smart_image_manager().purge_unreferenced_pool()
+        return self._smart_image_saved(
+            config,
+            f"智能图片图库已删除，回收 {removed} 个无引用文件。",
+        )
+
+    async def copy_smart_image_library(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        source_id = str(payload.get("source_library_id", "") or "").strip()
+        name = SmartImagePersonaLibraryManager.validate_library_name(
+            payload.get("name")
+        )
+        library_id = uuid4().hex
+
+        def mutate(config: dict[str, Any]) -> None:
+            source = config.setdefault("smart_image_libraries", {}).get(
+                source_id
+            )
+            if not isinstance(source, dict):
+                raise PolicyConfigError("源智能图片人格图库不存在。")
+            config["smart_image_libraries"][library_id] = {
+                "name": name,
+                "images": {
+                    digest: {
+                        **item,
+                        "tags": list(item.get("tags", []) or []),
+                    }
+                    for digest, item in source.get("images", {}).items()
+                },
+            }
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            f"已复制为智能图片图库「{name}」。",
+            library_id=library_id,
+        )
+
+    async def upload_smart_images(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_id = str(payload.get("library_id", "") or "").strip()
+        members = self._smart_image_manager().prepare_upload(
+            payload.get("files", [])
+        )
+
+        def mutate(config: dict[str, Any]) -> None:
+            library = config.setdefault("smart_image_libraries", {}).get(
+                library_id
+            )
+            if not isinstance(library, dict):
+                raise PolicyConfigError("智能图片人格图库不存在。")
+            library.setdefault("images", {}).update(members)
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            f"已导入 {len(members)} 张图片。",
+            library=self._smart_image_manager().describe(library_id),
+        )
+
+    async def delete_smart_images(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_id = str(payload.get("library_id", "") or "").strip()
+        hashes = {
+            str(item or "").strip()
+            for item in payload.get("hashes", [])
+            if str(item or "").strip()
+        }
+
+        def mutate(config: dict[str, Any]) -> None:
+            library = config.setdefault("smart_image_libraries", {}).get(
+                library_id
+            )
+            if not isinstance(library, dict):
+                raise PolicyConfigError("智能图片人格图库不存在。")
+            images = library.setdefault("images", {})
+            for digest in hashes:
+                images.pop(digest, None)
+
+        config = await self.plugin.update_policy(revision, mutate)
+        removed = self._smart_image_manager().purge_unreferenced_pool()
+        return self._smart_image_saved(
+            config,
+            f"已从图库移除 {len(hashes)} 张图片，回收 {removed} 个文件。",
+            library=self._smart_image_manager().describe(library_id),
+        )
+
+    async def save_smart_image_tags(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_id = str(payload.get("library_id", "") or "").strip()
+        image_hash = str(payload.get("hash", "") or "").strip()
+        tags = SmartImagePersonaLibraryManager.normalize_tags(
+            payload.get("tags", [])
+        )
+
+        def mutate(config: dict[str, Any]) -> None:
+            library = config.setdefault("smart_image_libraries", {}).get(
+                library_id
+            )
+            image = (
+                library.get("images", {}).get(image_hash)
+                if isinstance(library, dict)
+                else None
+            )
+            if not isinstance(image, dict):
+                raise PolicyConfigError("图库中不存在该图片。")
+            image["tags"] = tags
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            "人格图库图片标签已保存。",
+            library=self._smart_image_manager().describe(library_id),
+        )
+
+    async def caption_smart_image(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_id = str(payload.get("library_id", "") or "").strip()
+        image_hash = str(payload.get("hash", "") or "").strip()
+        manager = self._smart_image_manager()
+        tags = await manager.caption_image(image_hash)
+
+        def mutate(config: dict[str, Any]) -> None:
+            library = config.setdefault("smart_image_libraries", {}).get(
+                library_id
+            )
+            image = (
+                library.get("images", {}).get(image_hash)
+                if isinstance(library, dict)
+                else None
+            )
+            if not isinstance(image, dict):
+                raise PolicyConfigError("图库中不存在该图片。")
+            image["tags"] = tags
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            "Smart 视觉智能标签已生成。",
+            library=manager.describe(library_id),
+        )
+
+    async def apply_smart_image_tags(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        source_id = str(payload.get("source_library_id", "") or "").strip()
+        image_hash = str(payload.get("hash", "") or "").strip()
+        target_ids = {
+            str(item or "").strip()
+            for item in payload.get("target_library_ids", [])
+            if str(item or "").strip()
+        }
+        if not target_ids:
+            raise PolicyConfigError("请至少选择一个目标图库。")
+        applied = 0
+        skipped = 0
+        missing_same_image = 0
+
+        def mutate(config: dict[str, Any]) -> None:
+            nonlocal applied, skipped, missing_same_image
+            libraries = config.setdefault("smart_image_libraries", {})
+            source = libraries.get(source_id)
+            source_image = (
+                source.get("images", {}).get(image_hash)
+                if isinstance(source, dict)
+                else None
+            )
+            if not isinstance(source_image, dict):
+                raise PolicyConfigError("源图库中不存在该图片。")
+            tags = list(source_image.get("tags", []) or [])
+            for target_id in target_ids:
+                if target_id == source_id:
+                    skipped += 1
+                    continue
+                target = libraries.get(target_id)
+                if not isinstance(target, dict):
+                    skipped += 1
+                    continue
+                target_image = target.get("images", {}).get(image_hash)
+                if isinstance(target_image, dict):
+                    target_image["tags"] = list(tags)
+                    applied += 1
+                else:
+                    missing_same_image += 1
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            (
+                f"已把标签套用到 {applied} 个图库；"
+                f"跳过 {skipped} 个，无相同图片 {missing_same_image} 个。"
+            ),
+            applied=applied,
+            skipped=skipped,
+            missing_same_image=missing_same_image,
+        )
+
+    async def smart_image_pending_snapshot(self):
+        return self._ok(self._smart_image_manager().pending_snapshot())
+
+    async def distribute_smart_image_pending(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        library_ids = {
+            str(item or "").strip()
+            for item in payload.get("library_ids", [])
+            if str(item or "").strip()
+        }
+        if not library_ids:
+            raise PolicyConfigError("请至少选择一个目标人格图库。")
+        manager = self._smart_image_manager()
+        inherit = payload.get("inherit_auto_tags")
+        if inherit is None:
+            inherit = bool(
+                self.plugin.store.config.get(
+                    "smart_image_isolation",
+                    {},
+                ).get("inherit_auto_tags", True)
+            )
+        members, accepted_ids = manager.prepare_pending_distribution(
+            payload.get("image_ids", []),
+            inherit_auto_tags=bool(inherit),
+        )
+
+        def mutate(config: dict[str, Any]) -> None:
+            libraries = config.setdefault("smart_image_libraries", {})
+            missing = sorted(library_ids - set(libraries))
+            if missing:
+                raise PolicyConfigError("部分目标人格图库不存在。")
+            for library_id in library_ids:
+                libraries[library_id].setdefault("images", {}).update(
+                    {
+                        digest: {
+                            **item,
+                            "tags": list(item.get("tags", []) or []),
+                        }
+                        for digest, item in members.items()
+                    }
+                )
+
+        config = await self.plugin.update_policy(revision, mutate)
+        requested_move = payload.get("remove_from_pending") is True
+        removed = False
+        remove_warning = ""
+        discard_result: dict[str, Any] = {}
+        if requested_move:
+            try:
+                discard_result = manager.discard_pending(accepted_ids)
+                discarded = {
+                    str(item)
+                    for item in discard_result.get("discarded", [])
+                }
+                skipped_ids = {
+                    str(item)
+                    for item in discard_result.get("skipped", [])
+                }
+                removed = set(accepted_ids).issubset(discarded)
+                if not removed:
+                    remove_warning = (
+                        "图片已复制到目标图库，但部分缓冲图片未能移除。"
+                    )
+                if skipped_ids:
+                    remove_warning = (
+                        "图片已复制到目标图库，但部分缓冲图片已不存在或未能移除。"
+                    )
+            except Exception as exc:
+                remove_warning = (
+                    "图片已复制到目标图库，但从缓冲池移除失败："
+                    f"{exc}"
+                )
+        action = "移动" if requested_move and removed else "复制"
+        message = (
+            f"已将 {len(members)} 张图片{action}到 "
+            f"{len(library_ids)} 个人格图库。"
+        )
+        if remove_warning:
+            message = f"{message}{remove_warning}"
+        return self._smart_image_saved(
+            config,
+            message,
+            pending=manager.pending_snapshot(),
+            copied=True,
+            removed=removed,
+            requested_move=requested_move,
+            remove_warning=remove_warning,
+            discard_result=discard_result,
+        )
+
+    async def delete_smart_image_pending(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        store = self.plugin.store
+        if store is None:
+            raise PolicyConfigError("策略数据尚未加载。")
+        if revision != store.revision:
+            raise PolicyConflictError("数据已被其他页面更新，请刷新后再修改。")
+        image_ids = [
+            str(item or "").strip()
+            for item in payload.get("image_ids", [])
+            if str(item or "").strip()
+        ]
+        if not image_ids:
+            raise PolicyConfigError("请先选择要删除的缓冲图片。")
+        manager = self._smart_image_manager()
+        result = manager.discard_pending(image_ids)
+        discarded = list(result.get("discarded", []) or [])
+        skipped = list(result.get("skipped", []) or [])
+        return self._smart_image_saved(
+            store.config,
+            f"已删除 {len(discarded)} 张缓冲图片，跳过 {len(skipped)} 张。",
+            pending=manager.pending_snapshot(),
+            discarded=discarded,
+            skipped=skipped,
+        )
+
+    async def save_smart_image_persona_map(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        persona_id = str(payload.get("persona_id", "") or "").strip()
+        library_id = str(payload.get("library_id", "") or "").strip()
+        if not persona_id:
+            raise PolicyConfigError("缺少人格 ID。")
+
+        def mutate(config: dict[str, Any]) -> None:
+            mapping = config.setdefault(
+                "smart_image_persona_library_map",
+                {},
+            )
+            if not library_id:
+                mapping.pop(persona_id, None)
+                return
+            if library_id not in config.get("smart_image_libraries", {}):
+                raise PolicyConfigError("目标智能图片人格图库不存在。")
+            mapping[persona_id] = library_id
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            "智能图片人格图库映射已保存。",
+        )
+
+    async def save_smart_image_global_tags(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        tags = PolicyStore.normalize_smart_image_global_tags(
+            payload.get("tags", [])
+        )
+
+        def mutate(config: dict[str, Any]) -> None:
+            config["smart_image_global_tags"] = tags
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            f"已保存 {len(tags)} 个公用特征标签。",
+        )
+
+    async def save_smart_image_isolation(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        rule = PolicyStore.normalize_smart_image_isolation(
+            payload.get("rule")
+        )
+
+        def mutate(config: dict[str, Any]) -> None:
+            config["smart_image_isolation"] = rule
+
+        config = await self.plugin.update_policy(revision, mutate)
+        return self._smart_image_saved(
+            config,
+            "智能图片人格图库隔离设置已保存。",
+        )
+
+    async def backup_smart_image_libraries(self):
+        payload = await self._json_payload()
+        filename, archive = self._smart_image_manager().backup_libraries(
+            payload.get("library_ids")
+        )
+        return self._ok(
+            {
+                "filename": filename,
+                "data": (
+                    "data:application/zip;base64,"
+                    + base64.b64encode(archive).decode("ascii")
+                ),
+            }
+        )
+
     async def _validate_schedule_references(
         self,
         rule: dict[str, Any],
@@ -1384,6 +2014,13 @@ class PluginPageApi:
                 {},
             )
         )
+        configured.update(
+            str(item)
+            for item in config.get(
+                "smart_image_persona_library_map",
+                {},
+            )
+        )
         available = {
             str(persona.get("persona_id", ""))
             for persona in personas
@@ -1395,6 +2032,63 @@ class PluginPageApi:
         if adapter is None:
             raise PolicyConfigError("表情包库隔离适配器尚未初始化。")
         return MemePersonaLibraryManager(adapter)
+
+    def _smart_image_manager(self) -> SmartImagePersonaLibraryManager:
+        adapter = getattr(self.plugin, "smart_imagechat_adapter", None)
+        if adapter is None:
+            raise PolicyConfigError("智能图片人格图库适配器尚未初始化。")
+        return SmartImagePersonaLibraryManager(adapter)
+
+    def _smart_image_saved(
+        self,
+        config: dict[str, Any],
+        message: str,
+        **extra: Any,
+    ):
+        manager = self._smart_image_manager()
+        adapter = getattr(self.plugin, "smart_imagechat_adapter", None)
+        tag_payload = self._smart_image_tag_payload(config, adapter)
+        return self._ok(
+            {
+                "message": message,
+                "revision": int(config.get("revision", 0)),
+                "isolation": config.get("smart_image_isolation", {}),
+                "libraries": config.get("smart_image_libraries", {}),
+                "persona_library_map": config.get(
+                    "smart_image_persona_library_map",
+                    {},
+                ),
+                **tag_payload,
+                "targets": manager.targets(),
+                **extra,
+            }
+        )
+
+    @staticmethod
+    def _merge_tags(*groups: Any) -> list[str]:
+        merged: list[str] = []
+        for group in groups:
+            for tag in SmartImagePersonaLibraryManager.normalize_tags(group):
+                if tag not in merged:
+                    merged.append(tag)
+        return merged
+
+    def _smart_image_tag_payload(
+        self,
+        config: dict[str, Any],
+        adapter: Any,
+    ) -> dict[str, Any]:
+        policy_tags = config.get("smart_image_global_tags", [])
+        smart_tags = (
+            adapter.smart_global_tags()
+            if adapter is not None and hasattr(adapter, "smart_global_tags")
+            else []
+        )
+        return {
+            "global_tags": self._merge_tags(smart_tags, policy_tags),
+            "policy_global_tags": self._merge_tags(policy_tags),
+            "smart_global_tags": self._merge_tags(smart_tags),
+        }
 
     def _guard(self, handler, description: str):
         @wraps(handler)

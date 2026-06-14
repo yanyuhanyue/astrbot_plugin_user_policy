@@ -37,6 +37,7 @@ from .core import (
     PolicyStore,
     PrivateCompanionProactiveAdapter,
     ProactiveChatPersonaAdapter,
+    SmartImageChatPersonaAdapter,
     SELECTED_MODEL_EVENT_KEY,
     AstrBotSessionPersonaManager,
     SessionImporter,
@@ -59,7 +60,7 @@ PLUGIN_NAME = "astrbot_plugin_user_policy"
     PLUGIN_NAME,
     "烟雨寒月",
     "为私聊用户、群聊和群成员自由切换人格并管理相关策略。",
-    "3.4.13",
+    "3.5.2",
 )
 class UserPolicyPlugin(Star):
     """轻量、低冲突的用户人格与插件权限层。"""
@@ -95,6 +96,7 @@ class UserPolicyPlugin(Star):
         ) = None
         self.proactive_chat_adapter: ProactiveChatPersonaAdapter | None = None
         self.life_scheduler_adapter: LifeSchedulerPersonaAdapter | None = None
+        self.smart_imagechat_adapter: SmartImageChatPersonaAdapter | None = None
         self._plugin_catalog_cache: dict[str, dict[str, Any]] | None = None
         self._module_plugin_cache: dict[str, str] = {}
         self._decision_owner = object()
@@ -150,6 +152,11 @@ class UserPolicyPlugin(Star):
                 self,
                 star_map,
             )
+            self.smart_imagechat_adapter = SmartImageChatPersonaAdapter(
+                self,
+                data_dir,
+                star_map,
+            )
             restored = restore_user_policy_wrappers(self.context, star_map)
             if restored:
                 logger.info(
@@ -169,6 +176,7 @@ class UserPolicyPlugin(Star):
             self.private_companion_adapter.configure()
             self.proactive_chat_adapter.configure()
             self.life_scheduler_adapter.configure()
+            self.smart_imagechat_adapter.configure()
             self.persona_scheduler = PersonaScheduler(
                 data_dir,
                 self._schedule_rules,
@@ -246,6 +254,8 @@ class UserPolicyPlugin(Star):
         decision = self._decision_for_event(event)
         self._cache_decision(event, decision)
         self._log_match(decision)
+        if self.smart_imagechat_adapter is not None:
+            self.smart_imagechat_adapter.bind_event_persona(event, decision)
 
         if decision.is_blocked:
             event.stop_event()
@@ -270,6 +280,8 @@ class UserPolicyPlugin(Star):
                 not self._is_private_companion_internal_image_event(event)
             ),
         )
+        if self.smart_imagechat_adapter is not None:
+            self.smart_imagechat_adapter.bind_event_persona(event, decision)
         if decision.policy_configured:
             event.set_extra("dynamic_persona_decision", None)
             if decision.persona_mode != "auto":
@@ -772,6 +784,8 @@ class UserPolicyPlugin(Star):
             self.proactive_chat_adapter.restore()
         if self.life_scheduler_adapter is not None:
             self.life_scheduler_adapter.restore()
+        if self.smart_imagechat_adapter is not None:
+            self.smart_imagechat_adapter.restore()
         restored = restore_user_policy_wrappers(self.context, star_map)
         if restored:
             logger.info(
@@ -826,6 +840,7 @@ class UserPolicyPlugin(Star):
             self.private_companion_adapter,
             self.proactive_chat_adapter,
             self.life_scheduler_adapter,
+            self.smart_imagechat_adapter,
         )
         for adapter in adapters:
             if adapter is None:

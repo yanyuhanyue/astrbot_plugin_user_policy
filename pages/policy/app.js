@@ -49,6 +49,26 @@
       personas: [],
       revision: 0,
     },
+    smartImage: {
+      isolation: { enabled: false, inherit_auto_tags: true },
+      libraries: {},
+      globalTags: [],
+      policyGlobalTags: [],
+      smartGlobalTags: [],
+      personaLibraryMap: {},
+      targets: [],
+      personas: [],
+      status: {},
+      revision: 0,
+      currentLibraryId: "",
+      library: null,
+      pending: { images: [] },
+      selectedPending: new Set(),
+      previewCache: new Map(),
+      pendingPreviewCache: new Map(),
+      nameAction: null,
+      tagEditorHash: "",
+    },
     sessionImportPreview: null,
   };
   const weekdays = [
@@ -138,6 +158,12 @@
 
   function closeModal(id) {
     $(`#${id}`).classList.add("hidden");
+    if (id === "smartImageNameModal") {
+      state.smartImage.nameAction = null;
+    }
+    if (id === "smartImageTagModal") {
+      state.smartImage.tagEditorHash = "";
+    }
   }
 
   function clearPendingDelete() {
@@ -408,6 +434,16 @@
     )];
   }
 
+  function parseTagText(value) {
+    return [...new Set(
+      String(value || "")
+        .replace(/，/g, ",")
+        .split(/[\n,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )];
+  }
+
   function renderUsers() {
     $("#usersBody").innerHTML = state.users.map((user) => `
       <tr>
@@ -557,12 +593,14 @@
   function renderIntegrations() {
     const report = state.integrations || {};
     const memeItem = findIntegration(["meme_manager", "astrbot_plugin_meme_manager"]);
+    const smartImageItem = findIntegration(["astrbot_plugin_smart_imagechat_hub"]);
     const giteeAiimgItem = findIntegration(["astrbot_plugin_gitee_aiimg", "gitee_aiimg"]);
     const proactiveItem = findIntegration(["astrbot_plugin_proactive_chat"]);
     const privateCompanionItem = findIntegration(["astrbot_plugin_private_companion"]);
     const lifeItem = findIntegration(["astrbot_plugin_life_scheduler"]);
     const livingItem = findIntegration(["LivingMemory", "astrbot_plugin_livingmemory"]);
     const memeStatus = memeItem?.meme_isolation;
+    const smartImageStatus = smartImageItem?.smart_image_isolation;
     const giteeAiimgStatus = giteeAiimgItem?.gitee_aiimg_effects;
     const memeMappedCount = Object.keys(state.memeLibrary.personaLibraryMap || {}).length;
     const memeWrappedCount = (memeStatus?.wrapped_method_count || 0)
@@ -581,6 +619,7 @@
     `).join("");
     $("#integrationGrid").innerHTML = (report.items || []).map((item) => {
       const isMemeManager = ["meme_manager", "astrbot_plugin_meme_manager"].includes(item.name);
+      const isSmartImage = item.name === "astrbot_plugin_smart_imagechat_hub";
       const isGiteeAiimg = ["astrbot_plugin_gitee_aiimg", "gitee_aiimg"].includes(item.name);
       const isProactive = item.label === "Proactive Chat";
       const isPrivateCompanion = item.label === "Private Companion";
@@ -662,6 +701,27 @@
               <div class="group-actions integration-actions">
                 <button class="button small" type="button" data-open-meme-library>管理人格图库</button>
                 <button class="button small primary" type="button" data-save-meme-card>保存设置</button>
+              </div>
+            </div>
+          ` : ""}
+          ${isSmartImage ? `
+            <div class="integration-feature">
+              <div>
+                <strong>智能图片人格图库</strong>
+                <span>${state.smartImage.isolation.enabled ? "已启用" : "未启用"} · ${Object.keys(state.smartImage.libraries || {}).length} 个图库 · ${Object.keys(state.smartImage.personaLibraryMap || {}).length} 个人格映射</span>
+                <small>${escapeHtml(smartImageStatus?.message || "未启用时完全沿用 Smart ImageChat Hub 原图库。")}</small>
+              </div>
+              <label class="check-field compact">
+                <input type="checkbox" data-smart-image-enabled ${state.smartImage.isolation.enabled ? "checked" : ""}>
+                <span>启用按人格隔离 Smart ImageChat Hub 发图候选</span>
+              </label>
+              <label class="check-field compact">
+                <input type="checkbox" data-smart-image-inherit-tags ${state.smartImage.isolation.inherit_auto_tags !== false ? "checked" : ""}>
+                <span>缓冲池分发时继承已有标签</span>
+              </label>
+              <div class="group-actions integration-actions">
+                <button class="button small" type="button" data-open-smart-image-library>管理智能图片人格图库</button>
+                <button class="button small primary" type="button" data-save-smart-image-card>保存设置</button>
               </div>
             </div>
           ` : ""}
@@ -1510,6 +1570,570 @@
     }
   }
 
+  function applySmartImageData(data) {
+    if (typeof data.revision === "number") {
+      state.smartImage.revision = data.revision;
+      state.revision = data.revision;
+    }
+    if (data.isolation) state.smartImage.isolation = data.isolation;
+    if (data.libraries) state.smartImage.libraries = data.libraries;
+    if (Array.isArray(data.global_tags)) {
+      state.smartImage.globalTags = data.global_tags;
+    }
+    if (Array.isArray(data.policy_global_tags)) {
+      state.smartImage.policyGlobalTags = data.policy_global_tags;
+    }
+    if (Array.isArray(data.smart_global_tags)) {
+      state.smartImage.smartGlobalTags = data.smart_global_tags;
+    }
+    if (data.persona_library_map) {
+      state.smartImage.personaLibraryMap = data.persona_library_map;
+    }
+    if (data.targets) state.smartImage.targets = data.targets;
+    if (data.personas) state.smartImage.personas = data.personas;
+    if (data.status) state.smartImage.status = data.status;
+    if (data.library) {
+      state.smartImage.library = data.library;
+      state.smartImage.currentLibraryId = data.library.library_id || "";
+    }
+    if (data.pending) state.smartImage.pending = data.pending;
+    renderSmartImageManager();
+    renderIntegrations();
+    $("#runtimeStatus").textContent = `已连接 · 配置修订 #${state.revision}`;
+  }
+
+  function currentSmartImageLibraryId() {
+    return state.smartImage.currentLibraryId
+      || state.smartImage.targets?.[0]?.library_id
+      || "";
+  }
+
+  function renderSmartImageManager() {
+    const smart = state.smartImage;
+    const currentId = currentSmartImageLibraryId();
+    $("#smartImageLibrarySelect").innerHTML = smart.targets.length
+      ? smart.targets.map((item) => `
+        <option value="${escapeHtml(item.library_id)}" ${item.library_id === currentId ? "selected" : ""}>
+          ${escapeHtml(item.name)} · ${Number(item.image_count || 0)} 张
+        </option>`).join("")
+      : '<option value="">尚未创建人格图库</option>';
+    $("#smartImageLibraryStatus").textContent = smart.library?.name || "尚未选择图库";
+    $("#smartImageRuntimeStatus").textContent = smart.status?.message || "等待运行时适配";
+    ["smartImageRenameButton", "smartImageCopyButton", "smartImageDeleteButton", "smartImageUploadButton"]
+      .forEach((id) => { $(`#${id}`).disabled = !currentId; });
+    renderSmartImagePersonaMap();
+    renderSmartImageGlobalTags();
+    renderSmartPendingTargets();
+    renderSmartPendingGrid();
+    renderSmartImageGrid();
+  }
+
+  function renderSmartImageGlobalTags() {
+    const tags = state.smartImage.globalTags || [];
+    const policyTags = state.smartImage.policyGlobalTags || [];
+    const smartTags = state.smartImage.smartGlobalTags || [];
+    const input = $("#smartImageGlobalTagsInput");
+    if (input && document.activeElement !== input) {
+      input.value = policyTags.join("\n");
+    }
+    $("#smartImageGlobalTagsPreview").innerHTML = tags.map(
+      (tag) => `<span>${escapeHtml(tag)}</span>`
+    ).join("") || '<small>暂无公用标签</small>';
+    const smartPreview = $("#smartImageSmartGlobalTagsPreview");
+    if (smartPreview) {
+      smartPreview.innerHTML = smartTags.map(
+        (tag) => `<span>${escapeHtml(tag)}</span>`
+      ).join("") || '<small>Smart ImageChat Hub 暂无公用标签</small>';
+    }
+  }
+
+  function renderSmartImagePersonaMap() {
+    const libraries = state.smartImage.targets || [];
+    const mapping = state.smartImage.personaLibraryMap || {};
+    $("#smartImagePersonaMapList").innerHTML = state.personas.map((persona) => `
+      <label class="persona-map-item">
+        <span>${escapeHtml(persona.name || persona.persona_id)}</span>
+        <select data-smart-image-persona-map="${escapeHtml(persona.persona_id)}">
+          <option value="">沿用 Smart ImageChat Hub 原图库</option>
+          ${libraries.map((library) => `
+            <option value="${escapeHtml(library.library_id)}" ${mapping[persona.persona_id] === library.library_id ? "selected" : ""}>
+              ${escapeHtml(library.name)}
+            </option>`).join("")}
+        </select>
+      </label>
+    `).join("") || '<span class="muted">当前没有可映射的人格。</span>';
+  }
+
+  function renderSmartPendingTargets() {
+    $("#smartPendingTargetList").innerHTML = (state.smartImage.targets || []).map((item) => `
+      <label class="smart-target-choice">
+        <input type="checkbox" data-smart-pending-target value="${escapeHtml(item.library_id)}">
+        <span>${escapeHtml(item.name)}</span>
+      </label>
+    `).join("") || '<span class="muted">请先创建至少一个人格图库。</span>';
+  }
+
+  function renderSmartPendingGrid() {
+    const items = state.smartImage.pending?.images || [];
+    const selected = state.smartImage.selectedPending;
+    $("#smartPendingGrid").innerHTML = items.map((item) => `
+      <article class="smart-image-card ${selected.has(item.id) ? "is-selected" : ""}" data-smart-pending-select="${escapeHtml(item.id)}">
+        <img alt="${escapeHtml(item.filename || item.id)}" data-smart-pending-preview="${escapeHtml(item.id)}">
+        <strong>${escapeHtml(item.filename || item.id)}</strong>
+        <small>${escapeHtml((item.tags || []).join("、") || "暂无标签")}</small>
+      </article>
+    `).join("") || '<div class="empty compact"><strong>缓冲池为空</strong><span>Smart ImageChat Hub 自动偷图后会出现在这里。</span></div>';
+    hydrateSmartPendingPreviews();
+  }
+
+  function renderSmartImageGrid() {
+    const library = state.smartImage.library;
+    const images = library?.images || [];
+    $("#smartImageGrid").innerHTML = images.map((item) => `
+      <article class="smart-image-card">
+        <img alt="${escapeHtml(item.filename)}" data-smart-image-preview="${escapeHtml(item.hash)}">
+        <strong>${escapeHtml(item.filename)}</strong>
+        <small class="mono">${escapeHtml(item.hash.slice(0, 12))}</small>
+        <div class="smart-tag-summary">
+          ${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")
+            || '<small>暂无标签</small>'}
+        </div>
+        <div class="smart-image-actions">
+          <button class="button small primary" type="button" data-smart-edit-tags="${escapeHtml(item.hash)}">编辑标签</button>
+          <button class="button small" type="button" data-smart-caption-image="${escapeHtml(item.hash)}">智能打标</button>
+          <button class="button small danger" type="button" data-smart-delete-image="${escapeHtml(item.hash)}">移除</button>
+        </div>
+      </article>
+    `).join("") || '<div class="empty compact"><strong>当前图库没有图片</strong><span>可上传图片/ZIP，或从自动偷图缓冲池分发。</span></div>';
+    hydrateSmartImagePreviews();
+  }
+
+  async function hydrateSmartImagePreviews() {
+    for (const image of $$("img[data-smart-image-preview]")) {
+      const hash = image.dataset.smartImagePreview;
+      let preview = state.smartImage.previewCache.get(hash);
+      if (!preview) {
+        try {
+          preview = (await apiPost("smart-image/image/preview", { hash })).preview;
+          if (preview) state.smartImage.previewCache.set(hash, preview);
+        } catch (_) {
+          continue;
+        }
+      }
+      if (image.isConnected) image.src = preview;
+    }
+  }
+
+  async function hydrateSmartPendingPreviews() {
+    for (const image of $$("img[data-smart-pending-preview]")) {
+      const imageId = image.dataset.smartPendingPreview;
+      let preview = state.smartImage.pendingPreviewCache.get(imageId);
+      if (!preview) {
+        try {
+          preview = (await apiPost("smart-image/pending/preview", {
+            image_id: imageId,
+          })).preview;
+          if (preview) state.smartImage.pendingPreviewCache.set(imageId, preview);
+        } catch (_) {
+          continue;
+        }
+      }
+      if (image.isConnected) image.src = preview;
+    }
+  }
+
+  async function openSmartImageManager() {
+    openModal("smartImageLibraryModal");
+    $("#smartImageRuntimeStatus").textContent = "正在读取 Smart ImageChat Hub 数据...";
+    try {
+      const data = await apiGet("smart-image/bootstrap");
+      applySmartImageData(data);
+      const first = currentSmartImageLibraryId();
+      if (first) await loadSmartImageLibrary(first);
+      await refreshSmartPending();
+    } catch (error) {
+      $("#smartImageRuntimeStatus").textContent = "读取失败";
+      toast(error.message || String(error), "error");
+    }
+  }
+
+  async function loadSmartImageLibrary(libraryId) {
+    if (!libraryId) {
+      state.smartImage.library = null;
+      state.smartImage.currentLibraryId = "";
+      renderSmartImageManager();
+      return;
+    }
+    try {
+      const library = await apiPost("smart-image/library/load", {
+        library_id: libraryId,
+      });
+      state.smartImage.library = library;
+      state.smartImage.currentLibraryId = libraryId;
+      renderSmartImageManager();
+    } catch (error) {
+      toast(error.message || String(error), "error");
+    }
+  }
+
+  async function smartImageMutate(endpoint, body, successMessage) {
+    try {
+      const result = await apiPost(endpoint, {
+        revision: state.smartImage.revision || state.revision,
+        ...body,
+      });
+      applySmartImageData(result);
+      toast(result.message || successMessage);
+      return result;
+    } catch (error) {
+      if (error.code === 409) {
+        await loadData();
+        state.smartImage.revision = state.revision;
+        if (!$("#smartImageLibraryModal").classList.contains("hidden")) {
+          closeModal("smartImageNameModal");
+          closeModal("smartImageTagModal");
+          await openSmartImageManager();
+        }
+      }
+      toast(error.message || String(error), "error");
+      return null;
+    }
+  }
+
+  async function refreshSmartPending() {
+    try {
+      state.smartImage.pending = await apiGet("smart-image/pending/snapshot");
+      state.smartImage.selectedPending.clear();
+      state.smartImage.pendingPreviewCache.clear();
+      renderSmartPendingGrid();
+    } catch (error) {
+      toast(error.message || String(error), "error");
+    }
+  }
+
+  async function uploadSmartImageFiles(fileList) {
+    const libraryId = currentSmartImageLibraryId();
+    const files = [...(fileList || [])];
+    if (!libraryId || !files.length) return;
+    const encoded = [];
+    for (const file of files) {
+      encoded.push({ name: file.name, data: await readFileAsDataUrl(file) });
+    }
+    const result = await smartImageMutate("smart-image/images/upload", {
+      library_id: libraryId,
+      files: encoded,
+    }, "智能图片已上传。");
+    if (result?.library) {
+      state.smartImage.library = result.library;
+      renderSmartImageGrid();
+    }
+  }
+
+  async function distributeSmartPending(removeFromPending) {
+    const imageIds = [...state.smartImage.selectedPending];
+    const libraryIds = $$("[data-smart-pending-target]:checked").map((item) => item.value);
+    if (!imageIds.length) return toast("请先选择缓冲池图片。", "error");
+    if (!libraryIds.length) return toast("请至少选择一个目标人格图库。", "error");
+    const result = await smartImageMutate("smart-image/pending/distribute", {
+      image_ids: imageIds,
+      library_ids: libraryIds,
+      inherit_auto_tags: $("#smartPendingInheritTags").checked,
+      remove_from_pending: Boolean(removeFromPending),
+    }, removeFromPending ? "缓冲图片已移动。" : "缓冲图片已复制。");
+    if (result) {
+      state.smartImage.selectedPending.clear();
+      if (result.pending) state.smartImage.pending = result.pending;
+      await loadSmartImageLibrary(currentSmartImageLibraryId());
+      renderSmartPendingGrid();
+    }
+  }
+
+  function deleteSmartPending() {
+    const imageIds = [...state.smartImage.selectedPending];
+    if (!imageIds.length) {
+      toast("请先选择要删除的缓冲图片。", "error");
+      return;
+    }
+    requestDelete({
+      title: "删除缓冲图片",
+      message: `确定从 Smart ImageChat Hub 缓冲池删除选中的 ${imageIds.length} 张图片吗？`,
+      successMessage: "缓冲图片已删除。",
+      action: async () => {
+        const result = await smartImageMutate("smart-image/pending/delete", {
+          image_ids: imageIds,
+        }, "缓冲图片已删除。");
+        if (!result) return false;
+        state.smartImage.selectedPending.clear();
+        if (result.pending) state.smartImage.pending = result.pending;
+        renderSmartPendingGrid();
+        return true;
+      },
+    });
+  }
+
+  async function backupSmartImages() {
+    try {
+      const result = await apiPost("smart-image/backup", { library_ids: [] });
+      const link = document.createElement("a");
+      link.href = result.data;
+      link.download = result.filename || "smart-image-libraries.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast("智能图片人格图库备份已生成。");
+    } catch (error) {
+      toast(error.message || String(error), "error");
+    }
+  }
+
+  async function createSmartImageLibrary() {
+    const input = $("#smartImageCreateName");
+    const name = input.value.trim();
+    if (!name) return toast("请填写智能图片图库名称。", "error");
+    const result = await smartImageMutate("smart-image/library/create", {
+      name,
+    }, "智能图片图库已创建。");
+    if (!result) return;
+    input.value = "";
+    await loadSmartImageLibrary(result.library_id);
+  }
+
+  function suggestedSmartImageCopyName(sourceName) {
+    const existingNames = new Set(
+      Object.values(state.smartImage.libraries || {}).map((item) => item.name)
+    );
+    for (let index = 1; index < 1000; index += 1) {
+      const candidate = `${sourceName}(${index})`;
+      if (!existingNames.has(candidate)) return candidate;
+    }
+    return `${sourceName}副本`;
+  }
+
+  function openSmartImageNameModal(mode) {
+    const libraryId = currentSmartImageLibraryId();
+    if (!libraryId) return;
+    const currentName = state.smartImage.libraries?.[libraryId]?.name
+      || state.smartImage.library?.name
+      || libraryId;
+    const copying = mode === "copy";
+    state.smartImage.nameAction = { mode, libraryId };
+    $("#smartImageNameTitle").textContent = copying ? "复制人格图库" : "重命名人格图库";
+    $("#smartImageNameHint").textContent = copying
+      ? "复制会创建独立的图库成员和标签副本，之后修改互不影响。"
+      : "重命名只改变显示名称，不影响人格映射和图片。";
+    $("#smartImageNameInput").value = copying
+      ? suggestedSmartImageCopyName(currentName)
+      : currentName;
+    openModal("smartImageNameModal");
+    setTimeout(() => {
+      $("#smartImageNameInput").focus();
+      $("#smartImageNameInput").select();
+    }, 0);
+  }
+
+  async function confirmSmartImageName() {
+    const action = state.smartImage.nameAction;
+    const name = $("#smartImageNameInput").value.trim();
+    if (!action || !name) {
+      toast("请填写图库名称。", "error");
+      return;
+    }
+    const copying = action.mode === "copy";
+    const endpoint = copying
+      ? "smart-image/library/copy"
+      : "smart-image/library/rename";
+    const body = copying
+      ? { source_library_id: action.libraryId, name }
+      : { library_id: action.libraryId, name };
+    const result = await smartImageMutate(endpoint, body, copying
+      ? "智能图片图库已复制。"
+      : "智能图片图库已重命名。");
+    if (!result) return;
+    closeModal("smartImageNameModal");
+    await loadSmartImageLibrary(
+      copying ? result.library_id : action.libraryId
+    );
+  }
+
+  async function openSmartImageTagEditor(imageHash) {
+    const image = state.smartImage.library?.images?.find(
+      (item) => item.hash === imageHash
+    );
+    if (!image) return;
+    state.smartImage.tagEditorHash = imageHash;
+    $("#smartImageTagTitle").textContent = image.filename || "图片标签";
+    $("#smartImageTagFilename").textContent = image.filename || imageHash;
+    $("#smartImageTagHash").textContent = imageHash;
+    $("#smartImageTagText").value = (image.tags || []).join("\n");
+    const imageTags = new Set(image.tags || []);
+    const globalTags = state.smartImage.globalTags || [];
+    $("#smartImageCommonTagList").innerHTML = globalTags.map((tag) => `
+      <label class="smart-common-tag-choice">
+        <input type="checkbox" data-smart-common-tag value="${escapeHtml(tag)}" ${imageTags.has(tag) ? "checked" : ""}>
+        <span>${escapeHtml(tag)}</span>
+      </label>
+    `).join("") || '<span class="muted">尚未配置公用特征标签。</span>';
+    const currentId = currentSmartImageLibraryId();
+    const matchingTargets = (state.smartImage.targets || []).filter((target) => (
+      target.library_id !== currentId
+      && Boolean(
+        state.smartImage.libraries?.[target.library_id]?.images?.[imageHash]
+      )
+    ));
+    $("#smartImageTagTargetList").innerHTML = matchingTargets.map((target) => `
+      <label class="smart-target-choice">
+        <input type="checkbox" data-smart-tag-target value="${escapeHtml(target.library_id)}">
+        <span>${escapeHtml(target.name)}</span>
+      </label>
+    `).join("") || '<span class="muted">其他图库中没有这张相同图片。</span>';
+    $("#smartImageTagApplyButton").disabled = matchingTargets.length === 0;
+    const preview = state.smartImage.previewCache.get(imageHash);
+    $("#smartImageTagPreview").removeAttribute("src");
+    if (preview) {
+      $("#smartImageTagPreview").src = preview;
+    }
+    openModal("smartImageTagModal");
+    if (!preview) {
+      try {
+        const payload = await apiPost("smart-image/image/preview", {
+          hash: imageHash,
+        });
+        if (payload.preview) {
+          state.smartImage.previewCache.set(imageHash, payload.preview);
+          if (state.smartImage.tagEditorHash === imageHash) {
+            $("#smartImageTagPreview").src = payload.preview;
+          }
+        }
+      } catch (error) {
+        toast(error.message || String(error), "error");
+      }
+    }
+  }
+
+  async function saveSmartImageTags(imageHash, tags) {
+    const result = await smartImageMutate("smart-image/images/tags/save", {
+      library_id: currentSmartImageLibraryId(),
+      hash: imageHash,
+      tags,
+    }, "图片标签已保存。");
+    if (result?.library) {
+      state.smartImage.library = result.library;
+      renderSmartImageGrid();
+    }
+    return result;
+  }
+
+  async function saveSmartImageGlobalTags() {
+    const result = await smartImageMutate("smart-image/global-tags/save", {
+      tags: $("#smartImageGlobalTagsInput").value,
+    }, "公用特征标签已保存。");
+    if (result) renderSmartImageGlobalTags();
+  }
+
+  async function saveSmartImageTagEditor(applyToTargets) {
+    const imageHash = state.smartImage.tagEditorHash;
+    if (!imageHash) return;
+    const targetIds = $$("[data-smart-tag-target]:checked").map(
+      (item) => item.value
+    );
+    if (applyToTargets && !targetIds.length) {
+      toast("请至少选择一个包含相同图片的目标图库。", "error");
+      return;
+    }
+    const selectedCommonTags = $$("[data-smart-common-tag]:checked").map(
+      (item) => item.value
+    );
+    const tags = [
+      ...parseTagText($("#smartImageTagText").value),
+      ...selectedCommonTags,
+    ];
+    const saved = await saveSmartImageTags(imageHash, tags);
+    if (!saved) return;
+    if (applyToTargets) {
+      const applied = await smartImageMutate("smart-image/images/tags/apply", {
+        source_library_id: currentSmartImageLibraryId(),
+        hash: imageHash,
+        target_library_ids: targetIds,
+      }, "图片标签已套用。");
+      if (!applied) return;
+    }
+    closeModal("smartImageTagModal");
+  }
+
+  async function copySmartImageLibrary() {
+    openSmartImageNameModal("copy");
+  }
+
+  async function renameSmartImageLibrary() {
+    openSmartImageNameModal("rename");
+  }
+
+  function deleteSmartImageLibrary() {
+    const libraryId = currentSmartImageLibraryId();
+    if (!libraryId) return;
+    const name = state.smartImage.libraries?.[libraryId]?.name
+      || state.smartImage.library?.name
+      || libraryId;
+    requestDelete({
+      title: "删除智能图片人格图库",
+      message: `确定删除图库「${name}」吗？映射到它的人格将回退 Smart ImageChat Hub 原图库。`,
+      successMessage: "智能图片图库已删除。",
+      action: async () => {
+        const result = await smartImageMutate("smart-image/library/delete", {
+          library_id: libraryId,
+        }, "智能图片图库已删除。");
+        if (!result) return false;
+        const nextId = state.smartImage.targets?.[0]?.library_id || "";
+        await loadSmartImageLibrary(nextId);
+        return true;
+      },
+    });
+  }
+
+  async function captionSmartImage(imageHash, button) {
+    setButtonBusy(button, true, "打标中...");
+    try {
+      const result = await smartImageMutate("smart-image/images/caption", {
+        library_id: currentSmartImageLibraryId(),
+        hash: imageHash,
+      }, "Smart 视觉智能标签已生成。");
+      if (result?.library) {
+        state.smartImage.library = result.library;
+        renderSmartImageGrid();
+      }
+    } finally {
+      setButtonBusy(button, false);
+    }
+  }
+
+  function deleteSmartImage(imageHash) {
+    const item = state.smartImage.library?.images?.find(
+      (image) => image.hash === imageHash
+    );
+    requestDelete({
+      title: "移除智能图片",
+      message: `确定从当前图库移除「${item?.filename || imageHash}」吗？`,
+      successMessage: "图片已移除。",
+      action: async () => {
+        const result = await smartImageMutate("smart-image/images/delete", {
+          library_id: currentSmartImageLibraryId(),
+          hashes: [imageHash],
+        }, "图片已移除。");
+        if (!result) return false;
+        if (result.library) state.smartImage.library = result.library;
+        renderSmartImageGrid();
+        return true;
+      },
+    });
+  }
+
+  async function saveSmartImagePersonaMap(personaId, libraryId) {
+    await smartImageMutate("smart-image/persona-map/save", {
+      persona_id: personaId,
+      library_id: libraryId,
+    }, "智能图片人格图库映射已保存。");
+  }
+
   function renderGiteeAiimgEffects(status) {
     $("#giteeAiimgEffectsEnabled").checked = Boolean(state.giteeAiimgEffects.enabled);
     const wrappedCount = (status?.wrapped_method_count || 0)
@@ -1783,6 +2407,15 @@
       };
       state.memeLibrary.libraries = data.meme_libraries || {};
       state.memeLibrary.personaLibraryMap = data.meme_persona_library_map || {};
+      state.smartImage.isolation = data.smart_image_isolation || {
+        enabled: false,
+        inherit_auto_tags: true,
+      };
+      state.smartImage.libraries = data.smart_image_libraries || {};
+      state.smartImage.personaLibraryMap = data.smart_image_persona_library_map || {};
+      state.smartImage.globalTags = data.smart_image_global_tags || [];
+      state.smartImage.policyGlobalTags = data.smart_image_global_tags || [];
+      state.smartImage.smartGlobalTags = [];
       state.giteeAiimgEffects = data.gitee_aiimg_persona_effects || {
         enabled: false,
         effects: {},
@@ -2370,6 +3003,20 @@
         return;
       }
     }
+    const smartPendingCard = event.target.closest("[data-smart-pending-select]");
+    if (smartPendingCard && !event.target.closest("button, input, select, textarea")) {
+      const imageId = smartPendingCard.dataset.smartPendingSelect;
+      if (state.smartImage.selectedPending.has(imageId)) {
+        state.smartImage.selectedPending.delete(imageId);
+      } else {
+        state.smartImage.selectedPending.add(imageId);
+      }
+      smartPendingCard.classList.toggle(
+        "is-selected",
+        state.smartImage.selectedPending.has(imageId)
+      );
+      return;
+    }
     const titleToggle = event.target.closest(".meme-category-title[data-meme-toggle-category]");
     if (titleToggle && !event.target.closest("input, textarea, select, button")) {
       const category = titleToggle.dataset.memeToggleCategory;
@@ -2416,6 +3063,91 @@
     }
     if (target.dataset.openMemeLibrary !== undefined) {
       await openMemeLibraryManager();
+      return;
+    }
+    if (target.dataset.openSmartImageLibrary !== undefined) {
+      await openSmartImageManager();
+      return;
+    }
+    if (target.dataset.saveSmartImageCard !== undefined) {
+      await smartImageMutate("smart-image/isolation/save", {
+        rule: {
+          enabled: Boolean($("[data-smart-image-enabled]")?.checked),
+          inherit_auto_tags: Boolean(
+            $("[data-smart-image-inherit-tags]")?.checked
+          ),
+        },
+      }, "智能图片人格图库隔离设置已保存。");
+      return;
+    }
+    if (target.id === "smartImageCreateButton") {
+      await createSmartImageLibrary();
+      return;
+    }
+    if (target.id === "smartImageRenameButton") {
+      await renameSmartImageLibrary();
+      return;
+    }
+    if (target.id === "smartImageCopyButton") {
+      await copySmartImageLibrary();
+      return;
+    }
+    if (target.id === "smartImageNameConfirmButton") {
+      await confirmSmartImageName();
+      return;
+    }
+    if (target.id === "smartImageTagSaveButton") {
+      await saveSmartImageTagEditor(false);
+      return;
+    }
+    if (target.id === "smartImageTagApplyButton") {
+      await saveSmartImageTagEditor(true);
+      return;
+    }
+    if (target.id === "smartImageDeleteButton") {
+      deleteSmartImageLibrary();
+      return;
+    }
+    if (target.id === "smartImageUploadButton") {
+      const input = $("#smartImageUploadInput");
+      input.value = "";
+      input.click();
+      return;
+    }
+    if (target.id === "smartImageBackupButton") {
+      await backupSmartImages();
+      return;
+    }
+    if (target.id === "smartImageGlobalTagsSaveButton") {
+      await saveSmartImageGlobalTags();
+      return;
+    }
+    if (target.id === "smartPendingRefreshButton") {
+      await refreshSmartPending();
+      return;
+    }
+    if (target.id === "smartPendingCopyButton") {
+      await distributeSmartPending(false);
+      return;
+    }
+    if (target.id === "smartPendingMoveButton") {
+      await distributeSmartPending(true);
+      return;
+    }
+    if (target.id === "smartPendingDeleteButton") {
+      deleteSmartPending();
+      return;
+    }
+    if (target.dataset.smartEditTags !== undefined) {
+      await openSmartImageTagEditor(target.dataset.smartEditTags);
+      return;
+    }
+    if (target.dataset.smartCaptionImage !== undefined) {
+      await captionSmartImage(target.dataset.smartCaptionImage, target);
+      return;
+    }
+    if (target.dataset.smartDeleteImage !== undefined) {
+      deleteSmartImage(target.dataset.smartDeleteImage);
       return;
     }
     if (target.dataset.openDefaultMemeLibrary !== undefined) {
@@ -2813,6 +3545,9 @@
     state.memeLibrary.selectedImages.clear();
     loadMemeLibrary(event.target.value);
   });
+  $("#smartImageLibrarySelect").addEventListener("change", (event) => {
+    loadSmartImageLibrary(event.target.value);
+  });
   $("#lifeLibrarySelect").addEventListener("change", (event) => {
     state.currentLifeLibraryId = event.target.value;
     state.lifePoolImportKey = "";
@@ -2833,6 +3568,16 @@
     event.target.value = "";
     await uploadMemeFiles(category, files);
   });
+  $("#smartImageUploadInput").addEventListener("change", async (event) => {
+    const files = [...event.target.files];
+    event.target.value = "";
+    await uploadSmartImageFiles(files);
+  });
+  $("#smartImageNameInput").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    await confirmSmartImageName();
+  });
   document.addEventListener("change", (event) => {
     const poolSelect = event.target.closest("input[data-life-pool-select]");
     if (poolSelect) {
@@ -2852,6 +3597,16 @@
     const personaMap = event.target.closest("select[data-meme-persona-map]");
     if (personaMap) {
       saveMemePersonaMap(personaMap.dataset.memePersonaMap, personaMap.value);
+      return;
+    }
+    const smartImagePersonaMap = event.target.closest(
+      "select[data-smart-image-persona-map]"
+    );
+    if (smartImagePersonaMap) {
+      saveSmartImagePersonaMap(
+        smartImagePersonaMap.dataset.smartImagePersonaMap,
+        smartImagePersonaMap.value
+      );
       return;
     }
     const lifePersonaMap = event.target.closest("select[data-life-persona-map]");
