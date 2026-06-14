@@ -13,6 +13,7 @@ USER_POLICY_WRAPPED_MARKERS = (
     "_user_policy_livingmemory_engine_wrapped",
     "_user_policy_private_companion_wrapped",
     "_user_policy_proactive_wrapped",
+    "_user_policy_smart_image_wrapped",
 )
 USER_POLICY_ORIGINAL_ATTRS = (
     "_user_policy_meme_original",
@@ -22,6 +23,7 @@ USER_POLICY_ORIGINAL_ATTRS = (
     "_user_policy_livingmemory_engine_original",
     "_user_policy_private_companion_original",
     "_user_policy_proactive_original",
+    "_user_policy_smart_image_original",
     "__wrapped__",
 )
 

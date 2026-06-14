@@ -10,6 +10,7 @@ from .auto_persona import (
 )
 from .memory_isolation import MemoryIsolationManager
 from .meme_manager_adapter import MemeManagerPersonaAdapter
+from .smart_imagechat_adapter import SmartImageChatPersonaAdapter
 from .gitee_aiimg_adapter import GiteeAiimgPersonaAdapter
 from .life_schedule_library import LifeScheduleLibraryManager
 from .life_scheduler_adapter import LifeSchedulerPersonaAdapter
@@ -57,6 +58,7 @@ from .policy_store import (
     default_private_companion_proactive,
     default_plugin_access,
     default_meme_isolation,
+    default_smart_image_isolation,
     default_policy,
     default_proactive_chat_persona_prompts,
 )
@@ -77,6 +79,7 @@ __all__ = [
     "LivingMemoryPersonaAdapter",
     "MemoryIsolationManager",
     "MemeManagerPersonaAdapter",
+    "SmartImageChatPersonaAdapter",
     "PersonaScheduler",
     "SessionPersonaDiagnostics",
     "SessionPersonaResetResult",
@@ -99,6 +102,7 @@ __all__ = [
     "default_life_pool",
     "default_private_companion_proactive",
     "default_meme_isolation",
+    "default_smart_image_isolation",
     "default_plugin_access",
     "default_policy",
     "default_proactive_chat_persona_prompts",

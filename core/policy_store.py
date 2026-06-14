@@ -11,7 +11,7 @@ from typing import Any, Callable
 import yaml
 
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 PLUGIN_ACCESS_MODES = {"all", "allowlist", "denylist"}
 MEMBER_ACCESS_MODES = {"all", "allowlist", "denylist"}
 SCHEDULE_TARGET_TYPES = {"private", "group", "member"}
@@ -21,6 +21,13 @@ MEMBER_PERSONA_MODES = {"inherit", "fixed", "auto"}
 MEME_DEFAULT_LIBRARY_ID = "__default__"
 MEME_MANAGER_NAMESPACE = "__meme_manager__"
 MEME_LIBRARY_NAME_MAX = 60
+SMART_IMAGE_DEFAULT_LIBRARY_ID = "__default__"
+SMART_IMAGE_SMART_NAMESPACE = "__smart_imagechat__"
+SMART_IMAGE_LIBRARY_NAME_MAX = 60
+SMART_IMAGE_TAG_MAX = 40
+SMART_IMAGE_TAGS_PER_IMAGE_MAX = 24
+SMART_IMAGE_GLOBAL_TAGS_MAX = 200
+SMART_IMAGE_EXTENSIONS = {"gif", "jpeg", "jpg", "png", "webp"}
 LIFE_SCHEDULE_LIBRARY_NAME_MAX = 60
 LIFE_POOL_KEYS = ("daily_themes", "mood_colors", "outfit_styles", "schedule_types")
 LIFE_POOL_ITEM_MAX = 100
@@ -76,6 +83,13 @@ def default_meme_isolation() -> dict[str, Any]:
     return {
         "enabled": True,
         "copy_default_descriptions": True,
+    }
+
+
+def default_smart_image_isolation() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "inherit_auto_tags": True,
     }
 
 
@@ -135,6 +149,10 @@ def default_policy() -> dict[str, Any]:
         "meme_manager_isolation": default_meme_isolation(),
         "meme_libraries": {},
         "meme_persona_library_map": {},
+        "smart_image_isolation": default_smart_image_isolation(),
+        "smart_image_libraries": {},
+        "smart_image_persona_library_map": {},
+        "smart_image_global_tags": [],
         "gitee_aiimg_persona_effects": default_gitee_aiimg_effects(),
         "auto_persona_selector": default_auto_persona_selector(),
         "proactive_chat_persona_prompts": (
@@ -227,6 +245,13 @@ class PolicyStore:
         meme_manager_isolation = raw.get("meme_manager_isolation", {})
         meme_libraries = raw.get("meme_libraries", {})
         meme_persona_map = raw.get("meme_persona_library_map", {})
+        smart_image_isolation = raw.get("smart_image_isolation", {})
+        smart_image_libraries = raw.get("smart_image_libraries", {})
+        smart_image_persona_map = raw.get(
+            "smart_image_persona_library_map",
+            {},
+        )
+        smart_image_global_tags = raw.get("smart_image_global_tags", [])
         gitee_aiimg_effects = raw.get("gitee_aiimg_persona_effects", {})
         auto_persona_selector = raw.get("auto_persona_selector", {})
         proactive_chat_prompts = raw.get(
@@ -253,6 +278,14 @@ class PolicyStore:
             raise PolicyConfigError("命名表情库数据必须是对象。")
         if not isinstance(meme_persona_map, dict):
             raise PolicyConfigError("人格表情库映射必须是对象。")
+        if not isinstance(smart_image_isolation, dict):
+            raise PolicyConfigError("智能图片人格隔离设置必须是对象。")
+        if not isinstance(smart_image_libraries, dict):
+            raise PolicyConfigError("智能图片人格图库数据必须是对象。")
+        if not isinstance(smart_image_persona_map, dict):
+            raise PolicyConfigError("智能图片人格图库映射必须是对象。")
+        if not isinstance(smart_image_global_tags, (list, str)):
+            raise PolicyConfigError("智能图片公用特征标签必须是数组或文本。")
         if not isinstance(gitee_aiimg_effects, dict):
             raise PolicyConfigError("Gitee AI Image 人格效果设置必须是对象。")
         if not isinstance(auto_persona_selector, dict):
@@ -325,6 +358,21 @@ class PolicyStore:
             meme_persona_map,
             result["meme_libraries"],
         )
+        result["smart_image_isolation"] = cls._normalize_smart_image_isolation(
+            smart_image_isolation
+        )
+        result["smart_image_libraries"] = cls._normalize_smart_image_libraries(
+            smart_image_libraries
+        )
+        result["smart_image_persona_library_map"] = (
+            cls._normalize_smart_image_persona_map(
+                smart_image_persona_map,
+                result["smart_image_libraries"],
+            )
+        )
+        result["smart_image_global_tags"] = cls._normalize_smart_image_global_tags(
+            smart_image_global_tags
+        )
         result["gitee_aiimg_persona_effects"] = cls._normalize_gitee_aiimg_effects(
             gitee_aiimg_effects
         )
@@ -386,6 +434,26 @@ class PolicyStore:
     @classmethod
     def normalize_meme_isolation(cls, rule: Any) -> dict[str, Any]:
         return cls._normalize_meme_isolation(rule)
+
+    @classmethod
+    def normalize_smart_image_isolation(cls, rule: Any) -> dict[str, Any]:
+        return cls._normalize_smart_image_isolation(rule)
+
+    @classmethod
+    def normalize_smart_image_libraries(cls, value: Any) -> dict[str, Any]:
+        return cls._normalize_smart_image_libraries(value)
+
+    @classmethod
+    def normalize_smart_image_persona_map(
+        cls,
+        value: Any,
+        libraries: dict[str, Any],
+    ) -> dict[str, Any]:
+        return cls._normalize_smart_image_persona_map(value, libraries)
+
+    @classmethod
+    def normalize_smart_image_global_tags(cls, value: Any) -> list[str]:
+        return cls._normalize_smart_image_global_tags(value)
 
     @classmethod
     def _normalize_private_rule(cls, rule: Any) -> dict[str, Any]:
@@ -731,6 +799,133 @@ class PolicyStore:
                 continue
             result[pid] = target
         return result
+
+    @classmethod
+    def _normalize_smart_image_isolation(
+        cls,
+        rule: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(rule, dict):
+            raise PolicyConfigError("智能图片人格隔离设置必须是对象。")
+        return {
+            "enabled": bool(rule.get("enabled", False)),
+            "inherit_auto_tags": bool(
+                rule.get("inherit_auto_tags", True)
+            ),
+        }
+
+    @classmethod
+    def _normalize_smart_image_libraries(
+        cls,
+        value: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise PolicyConfigError("智能图片人格图库数据必须是对象。")
+        result: dict[str, Any] = {}
+        reserved = {
+            SMART_IMAGE_DEFAULT_LIBRARY_ID,
+            SMART_IMAGE_SMART_NAMESPACE,
+            "default",
+        }
+        for library_id, library in value.items():
+            key = cls.validate_identifier(library_id, "智能图片图库 ID")
+            if key in reserved:
+                raise PolicyConfigError("智能图片图库 ID 不能使用保留值。")
+            if not isinstance(library, dict):
+                raise PolicyConfigError("智能图片图库定义必须是对象。")
+            name = cls._string(
+                library.get("name", ""),
+                "智能图片图库名称",
+                maximum=SMART_IMAGE_LIBRARY_NAME_MAX,
+            )
+            if not name:
+                raise PolicyConfigError("智能图片图库名称不能为空。")
+            images = library.get("images", {})
+            if not isinstance(images, dict):
+                raise PolicyConfigError("智能图片图库成员必须是对象。")
+            normalized_images: dict[str, Any] = {}
+            for digest, image in images.items():
+                image_hash = str(digest or "").strip().lower()
+                if (
+                    len(image_hash) != 64
+                    or any(char not in "0123456789abcdef" for char in image_hash)
+                ):
+                    raise PolicyConfigError("智能图片内容哈希必须是 64 位 SHA-256。")
+                if not isinstance(image, dict):
+                    raise PolicyConfigError("智能图片成员定义必须是对象。")
+                extension = str(image.get("ext", "") or "").strip().lower()
+                if extension.startswith("."):
+                    extension = extension[1:]
+                if extension not in SMART_IMAGE_EXTENSIONS:
+                    raise PolicyConfigError("智能图片格式仅支持 png、jpg、jpeg、gif、webp。")
+                tags = cls._normalize_string_list(
+                    image.get("tags", []),
+                    "智能图片标签",
+                )
+                tags = [
+                    tag[:SMART_IMAGE_TAG_MAX]
+                    for tag in tags
+                    if tag
+                ][:SMART_IMAGE_TAGS_PER_IMAGE_MAX]
+                try:
+                    added_at = max(0, int(image.get("added_at", 0)))
+                except (TypeError, ValueError) as exc:
+                    raise PolicyConfigError("智能图片加入时间必须是整数。") from exc
+                normalized_images[image_hash] = {
+                    "ext": extension,
+                    "filename": cls._string(
+                        image.get("filename", f"{image_hash}.{extension}"),
+                        "智能图片文件名",
+                        maximum=200,
+                    ) or f"{image_hash}.{extension}",
+                    "tags": tags,
+                    "added_at": added_at,
+                }
+            result[key] = {
+                "name": name,
+                "images": normalized_images,
+            }
+        return result
+
+    @classmethod
+    def _normalize_smart_image_persona_map(
+        cls,
+        value: Any,
+        libraries: dict[str, Any],
+    ) -> dict[str, str]:
+        if not isinstance(value, dict):
+            raise PolicyConfigError("智能图片人格图库映射必须是对象。")
+        result: dict[str, str] = {}
+        for persona_id, library_id in value.items():
+            pid = cls._string(str(persona_id), "人格 ID", maximum=200)
+            target = str(library_id or "").strip()
+            if pid and target in libraries:
+                result[pid] = target
+        return result
+
+    @classmethod
+    def _normalize_smart_image_global_tags(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            raw_source = [value]
+        else:
+            raw_source = value
+        raw_items = []
+        for item in raw_source:
+            raw_items.extend(
+                str(item or "")
+                .replace("，", ",")
+                .replace("\n", ",")
+                .split(",")
+            )
+        tags = cls._normalize_string_list(
+            raw_items,
+            "智能图片公用特征标签",
+        )
+        return [
+            tag[:SMART_IMAGE_TAG_MAX]
+            for tag in tags
+            if tag
+        ][:SMART_IMAGE_GLOBAL_TAGS_MAX]
 
     @classmethod
     def _normalize_gitee_aiimg_effects(cls, rule: Any) -> dict[str, Any]:
@@ -1472,6 +1667,10 @@ class PolicyStore:
             "meme_manager_isolation": default_meme_isolation(),
             "meme_libraries": {},
             "meme_persona_library_map": {},
+            "smart_image_isolation": default_smart_image_isolation(),
+            "smart_image_libraries": {},
+            "smart_image_persona_library_map": {},
+            "smart_image_global_tags": [],
             "gitee_aiimg_persona_effects": default_gitee_aiimg_effects(),
             "private_companion_proactive": (
                 default_private_companion_proactive()

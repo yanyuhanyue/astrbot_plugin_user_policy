@@ -28,6 +28,15 @@ INTEGRATION_CATALOG = (
         "boundary": "本插件不改变表情选择、收藏或发送逻辑。",
     },
     {
+        "names": ("astrbot_plugin_smart_imagechat_hub",),
+        "label": "Smart ImageChat Hub",
+        "role": "智能搜图、主动表情、偷图与斗图",
+        "boundary": (
+            "可按最终人格隔离发图候选并管理独立标签；"
+            "不修改原插件索引、配置或缓冲池结构。"
+        ),
+    },
+    {
         "names": ("astrbot_plugin_proactive_chat",),
         "label": "Proactive Chat",
         "role": "主动聊天调度",
@@ -99,6 +108,12 @@ class IntegrationInspector:
                 self._attach_meme_adapter_status(item)
             if integration["names"][0] == "astrbot_plugin_gitee_aiimg":
                 self._attach_gitee_aiimg_adapter_status(item)
+            if integration["names"][0] == "astrbot_plugin_smart_imagechat_hub":
+                self._attach_adapter_status(
+                    item,
+                    "smart_imagechat_adapter",
+                    "smart_image_isolation",
+                )
             if integration["label"] == "LivingMemory":
                 self._attach_adapter_status(
                     item,
