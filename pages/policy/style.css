@@ -147,6 +147,12 @@ td { font-size: 14px; }
 .diagnostic.info { border-left-color: #2970ff; }
 .diagnostic.warning { border-left-color: var(--warning); }
 .integration-card .integration-state { margin-bottom: 12px; }
+.integration-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .integration-card code { display: block; margin-bottom: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .integration-card p { margin-bottom: 8px; line-height: 1.6; }
 .integration-card small { color: var(--muted); line-height: 1.6; }

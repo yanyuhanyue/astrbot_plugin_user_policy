@@ -644,7 +644,10 @@
           <div class="integration-state">
             <span class="badge ${item.activated ? "" : "neutral"}">${item.activated ? "已启用" : (item.detected ? "未启用" : "未安装")}</span>
           </div>
-          <h3>${escapeHtml(item.label)}</h3>
+          <h3 class="integration-title">
+            <span>${escapeHtml(item.label)}</span>
+            ${isMemeManager ? `<span class="badge warning">暂停维护</span>` : ""}
+          </h3>
           <code>${escapeHtml(item.name)}</code>
           <p>${escapeHtml(item.role)}</p>
           <small>${escapeHtml(item.boundary)}</small>
