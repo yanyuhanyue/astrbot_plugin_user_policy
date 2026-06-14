@@ -7,7 +7,7 @@
 为不同私聊用户、群聊和群成员自由切换人格
 
 <p>
-  <img src="https://img.shields.io/badge/Version-3.4.12-brightgreen" alt="Version 3.4.12">
+  <img src="https://img.shields.io/badge/Version-3.4.13-brightgreen" alt="Version 3.4.13">
   <img src="https://img.shields.io/badge/AstrBot-%3E%3D4.24.2%2C%3C5-orange" alt="AstrBot >=4.24.2,<5">
   <img src="https://img.shields.io/badge/WebUI-Plugin%20Pages-blue" alt="AstrBot Plugin Pages">
 </p>
@@ -82,6 +82,7 @@
 > [!TIP]
 > 安装前已经存在的会话不会被删除。首次生成空策略时会自动导入已有会话；之后更新或重载插件不会再次自动导入。需要重新扫描时，可在私聊用户或群聊页面点击“导入已有会话”。被你删除过的导入项会被记入忽略列表，除非手动重新添加，否则不会再次导入回来。
 > 导入会话会保存为 `平台:用户ID` 或 `平台:群ID`，例如 `default:1936533020`，用于区分多个机器人；手动添加裸 ID 仍可作为通用规则使用。
+> 升级到 `3.4.13` 时，旧配置中的顶层裸用户 ID、群 ID、计划目标和导入忽略项会一次性迁移为 `default:ID`；群内成员 ID 保持不变。
 
 ## WebUI 控制台
 
@@ -311,7 +312,7 @@ Private Companion 的图片识别由其自身直接调用视觉提供商。原�
 
 `32` 是策略数据的配置修订号，不是插件版本。每次成功保存策略后修订号都会递增，用于阻止旧页面覆盖其他页面刚保存的内容。
 
-插件版本请查看插件信息中的 `3.4.12`。
+插件版本请查看插件信息中的 `3.4.13`。
 
 ### 为什么修改 AstrBot 配置默认人格后，回复还是旧人格？
 

@@ -11,7 +11,7 @@ from typing import Any, Callable
 import yaml
 
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 PLUGIN_ACCESS_MODES = {"all", "allowlist", "denylist"}
 MEMBER_ACCESS_MODES = {"all", "allowlist", "denylist"}
 SCHEDULE_TARGET_TYPES = {"private", "group", "member"}
@@ -212,6 +212,10 @@ class PolicyStore:
 
         result = default_policy()
         try:
+            source_schema_version = int(raw.get("schema_version", 1))
+        except (TypeError, ValueError) as exc:
+            raise PolicyConfigError("策略结构版本号无效。") from exc
+        try:
             result["revision"] = max(1, int(raw.get("revision", 1)))
         except (TypeError, ValueError) as exc:
             raise PolicyConfigError("策略版本号无效。") from exc
@@ -275,6 +279,18 @@ class PolicyStore:
             private_users,
             groups,
         )
+        if source_schema_version < 14:
+            (
+                private_users,
+                groups,
+                session_import_ignored,
+                schedules,
+            ) = cls._migrate_legacy_scoped_ids(
+                private_users,
+                groups,
+                session_import_ignored,
+                schedules,
+            )
 
         result["private_users"] = {
             cls.validate_identifier(user_id, "用户 ID"): cls._normalize_private_rule(
@@ -1040,6 +1056,71 @@ class PolicyStore:
         return migrated_private, migrated_groups
 
     @classmethod
+    def _migrate_legacy_scoped_ids(
+        cls,
+        private_users: dict[str, Any],
+        groups: dict[str, Any],
+        session_import_ignored: dict[str, Any],
+        schedules: dict[str, Any],
+    ) -> tuple[
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, Any],
+    ]:
+        migrated_private = cls._scope_legacy_rule_map(private_users)
+        migrated_groups = cls._scope_legacy_rule_map(groups)
+        migrated_ignored = deepcopy(session_import_ignored)
+        for key in ("private_users", "groups"):
+            values = migrated_ignored.get(key, [])
+            if isinstance(values, list):
+                migrated_ignored[key] = [
+                    cls._scope_legacy_identifier(item)
+                    for item in values
+                ]
+
+        migrated_schedules = deepcopy(schedules)
+        for schedule in migrated_schedules.values():
+            if not isinstance(schedule, dict):
+                continue
+            target_type = str(
+                schedule.get("target_type", "") or ""
+            ).strip()
+            if target_type == "private":
+                schedule["user_id"] = cls._scope_legacy_identifier(
+                    schedule.get("user_id", "")
+                )
+            elif target_type in {"group", "member"}:
+                schedule["group_id"] = cls._scope_legacy_identifier(
+                    schedule.get("group_id", "")
+                )
+        return (
+            migrated_private,
+            migrated_groups,
+            migrated_ignored,
+            migrated_schedules,
+        )
+
+    @classmethod
+    def _scope_legacy_rule_map(
+        cls,
+        rules: dict[str, Any],
+    ) -> dict[str, Any]:
+        migrated: dict[str, Any] = {}
+        for identifier, rule in rules.items():
+            target_id = cls._scope_legacy_identifier(identifier)
+            if target_id not in migrated:
+                migrated[target_id] = deepcopy(rule)
+        return migrated
+
+    @staticmethod
+    def _scope_legacy_identifier(value: Any) -> str:
+        identifier = str(value or "").strip()
+        if not identifier or ":" in identifier:
+            return identifier
+        return f"default:{identifier}"
+
+    @classmethod
     def _group_rule_from_private(cls, rule: Any) -> dict[str, Any]:
         if not isinstance(rule, dict):
             rule = {}
@@ -1295,18 +1376,22 @@ class PolicyStore:
         legacy_private = raw.get("private_users", {})
         if isinstance(legacy_private, dict):
             for user_id, rule in legacy_private.items():
-                identifier = str(user_id)
+                legacy_identifier = str(user_id)
+                identifier = self._scope_legacy_identifier(
+                    legacy_identifier
+                )
                 resolved = self._resolve_legacy_profile(profiles, rule)
                 private_users[identifier] = {
                     "persona_id": str(resolved.get("persona_id", "") or ""),
-                    "blocked": identifier in global_blacklist,
+                    "blocked": legacy_identifier in global_blacklist,
                     "allow_persona_switch": False,
                     "memory_isolation": True,
                     "plugin_access": self._legacy_plugin_access(resolved),
                 }
         for user_id in global_blacklist:
+            identifier = self._scope_legacy_identifier(user_id)
             private_users.setdefault(
-                user_id,
+                identifier,
                 {
                     "persona_id": "",
                     "blocked": True,
@@ -1351,7 +1436,7 @@ class PolicyStore:
                             "plugin_access": member_access,
                         }
 
-                migrated_groups[str(group_id)] = {
+                migrated_groups[self._scope_legacy_identifier(group_id)] = {
                     "description": str(
                         group_rule.get("description", "") or ""
                     ),

@@ -59,7 +59,7 @@ PLUGIN_NAME = "astrbot_plugin_user_policy"
     PLUGIN_NAME,
     "烟雨寒月",
     "为私聊用户、群聊和群成员自由切换人格并管理相关策略。",
-    "3.4.12",
+    "3.4.13",
 )
 class UserPolicyPlugin(Star):
     """轻量、低冲突的用户人格与插件权限层。"""
