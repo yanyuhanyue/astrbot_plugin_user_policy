@@ -15,7 +15,6 @@ from .meme_library import MemePersonaLibraryManager
 from .smart_image_library import SmartImagePersonaLibraryManager
 from .policy_store import (
     MEME_DEFAULT_LIBRARY_ID,
-    SMART_IMAGE_SMART_NAMESPACE,
     PolicyConfigError,
     PolicyConflictError,
     PolicyStore,
@@ -1323,7 +1322,7 @@ class PluginPageApi:
         manager = self._smart_image_manager()
         copied_images: dict[str, dict[str, Any]] | None = None
         copied_count = 0
-        if source_id == SMART_IMAGE_SMART_NAMESPACE:
+        if manager.is_original_library_id(source_id):
             store = self.plugin.store
             if store is None:
                 raise PolicyConfigError("策略数据尚未加载。")
@@ -1331,7 +1330,7 @@ class PluginPageApi:
                 raise PolicyConflictError(
                     "数据已被其他页面更新，请刷新后再修改。"
                 )
-            copied_images = manager.prepare_original_library_copy()
+            copied_images = manager.prepare_original_library_copy(source_id)
 
         def mutate(config: dict[str, Any]) -> None:
             nonlocal copied_count

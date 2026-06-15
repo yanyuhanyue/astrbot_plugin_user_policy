@@ -20,7 +20,13 @@ from .policy_store import (
     SMART_IMAGE_TAGS_PER_IMAGE_MAX,
     PolicyConfigError,
 )
-from .smart_imagechat_adapter import SmartImageChatPersonaAdapter
+from .smart_imagechat_adapter import (
+    SMART_IMAGE_COLLECTED_SOURCE,
+    SMART_IMAGE_EXTERNAL_SOURCE,
+    SMART_IMAGE_IMAGEBED_SOURCE,
+    SMART_IMAGE_MANUAL_SOURCE,
+    SmartImageChatPersonaAdapter,
+)
 
 
 ALLOWED_IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".webp"}
@@ -34,7 +40,25 @@ MAX_ARCHIVE_ENTRIES = 2000
 class SmartImagePersonaLibraryManager:
     """维护内容寻址图片池和人格图库逻辑成员。"""
 
-    ORIGINAL_LIBRARY_NAME = "Smart ImageChat Hub 原图库（只读）"
+    ORIGINAL_LIBRARY_NAME = "Smart ImageChat Hub 全部图库（只读）"
+    ORIGINAL_SOURCE_NAMES = {
+        SMART_IMAGE_MANUAL_SOURCE: "手动上传图库（只读）",
+        SMART_IMAGE_COLLECTED_SOURCE: "自动收集图库（只读）",
+        SMART_IMAGE_EXTERNAL_SOURCE: "其他插件图库（只读）",
+        SMART_IMAGE_IMAGEBED_SOURCE: "图床同步图库（只读）",
+    }
+    ORIGINAL_SOURCE_LABELS = {
+        SMART_IMAGE_MANUAL_SOURCE: "手动上传",
+        SMART_IMAGE_COLLECTED_SOURCE: "自动收集",
+        SMART_IMAGE_EXTERNAL_SOURCE: "其他插件",
+        SMART_IMAGE_IMAGEBED_SOURCE: "图床同步",
+    }
+    CAPTION_STATUS_LABELS = {
+        "done": "标签已完成",
+        "pending": "等待打标",
+        "running": "正在打标",
+        "failed": "打标失败",
+    }
 
     def __init__(self, adapter: SmartImageChatPersonaAdapter):
         self.adapter = adapter
@@ -43,16 +67,37 @@ class SmartImagePersonaLibraryManager:
         items = []
         target = self.adapter.target or self.adapter._find_target()
         if target is not None:
+            originals = self.adapter.original_library_images()
             items.append(
                 {
                     "library_id": SMART_IMAGE_SMART_NAMESPACE,
                     "name": self.ORIGINAL_LIBRARY_NAME,
-                    "image_count": len(
-                        self.adapter.original_library_candidates()
-                    ),
+                    "image_count": len(originals),
                     "readonly": True,
+                    "sort_order": 0,
                 }
             )
+            for order, (source, name) in enumerate(
+                self.ORIGINAL_SOURCE_NAMES.items(),
+                start=1,
+            ):
+                count = sum(
+                    1
+                    for item in originals
+                    if item.get("library_source") == source
+                )
+                if not count:
+                    continue
+                items.append(
+                    {
+                        "library_id": self.original_library_id(source),
+                        "name": name,
+                        "image_count": count,
+                        "readonly": True,
+                        "source": source,
+                        "sort_order": order,
+                    }
+                )
         for library_id, library in self.adapter._libraries().items():
             images = library.get("images", {}) if isinstance(library, dict) else {}
             items.append(
@@ -61,19 +106,21 @@ class SmartImagePersonaLibraryManager:
                     "name": str(library.get("name", "") or library_id),
                     "image_count": len(images) if isinstance(images, dict) else 0,
                     "readonly": False,
+                    "sort_order": 100,
                 }
             )
         return sorted(
             items,
             key=lambda item: (
                 not bool(item.get("readonly")),
+                int(item.get("sort_order", 100)),
                 item["name"].casefold(),
             ),
         )
 
     def describe(self, library_id: Any) -> dict[str, Any]:
-        if str(library_id or "").strip() == SMART_IMAGE_SMART_NAMESPACE:
-            return self._describe_original_library()
+        if self.is_original_library_id(library_id):
+            return self._describe_original_library(library_id)
         library_id, library = self._library(library_id)
         images = []
         for digest, item in library.get("images", {}).items():
@@ -109,8 +156,12 @@ class SmartImagePersonaLibraryManager:
         library_id: Any = "",
         image_id: Any = "",
     ) -> dict[str, Any]:
-        if str(library_id or "").strip() == SMART_IMAGE_SMART_NAMESPACE:
-            return self._original_image_payload(digest, image_id)
+        if self.is_original_library_id(library_id):
+            return self._original_image_payload(
+                digest,
+                image_id,
+                library_id=library_id,
+            )
         image_hash = self._hash(digest)
         path = self._find_pool_file(image_hash)
         if not path.is_file():
@@ -123,10 +174,14 @@ class SmartImagePersonaLibraryManager:
             "preview": self._data_url(path.suffix, data),
         }
 
-    def prepare_original_library_copy(self) -> dict[str, dict[str, Any]]:
+    def prepare_original_library_copy(
+        self,
+        library_id: Any = SMART_IMAGE_SMART_NAMESPACE,
+    ) -> dict[str, dict[str, Any]]:
         members: dict[str, dict[str, Any]] = {}
         now = int(time.time())
-        for item in self._original_library_items():
+        source = self.original_library_source(library_id)
+        for item in self._original_library_items(source):
             path = item["path"]
             image_hash, extension = self._store_file(path)
             members[image_hash] = {
@@ -136,6 +191,32 @@ class SmartImagePersonaLibraryManager:
                 "added_at": now,
             }
         return members
+
+    @classmethod
+    def original_library_id(cls, source: str) -> str:
+        return f"{SMART_IMAGE_SMART_NAMESPACE}:{source}"
+
+    @classmethod
+    def is_original_library_id(cls, library_id: Any) -> bool:
+        key = str(library_id or "").strip()
+        return (
+            key == SMART_IMAGE_SMART_NAMESPACE
+            or key in {
+                cls.original_library_id(source)
+                for source in cls.ORIGINAL_SOURCE_NAMES
+            }
+        )
+
+    @classmethod
+    def original_library_source(cls, library_id: Any) -> str | None:
+        key = str(library_id or "").strip()
+        if key == SMART_IMAGE_SMART_NAMESPACE:
+            return None
+        prefix = f"{SMART_IMAGE_SMART_NAMESPACE}:"
+        source = key[len(prefix):] if key.startswith(prefix) else ""
+        if source not in cls.ORIGINAL_SOURCE_NAMES:
+            raise PolicyConfigError("Smart ImageChat Hub 只读图库不存在。")
+        return source
 
     def pending_snapshot(self) -> dict[str, Any]:
         target = self._target()
@@ -385,9 +466,11 @@ class SmartImagePersonaLibraryManager:
             raise PolicyConfigError("智能图片人格图库不存在。")
         return key, library
 
-    def _describe_original_library(self) -> dict[str, Any]:
+    def _describe_original_library(self, library_id: Any) -> dict[str, Any]:
+        key = str(library_id or "").strip()
+        source = self.original_library_source(key)
         images = []
-        for item in self._original_library_items():
+        for item in self._original_library_items(source):
             path = item["path"]
             images.append(
                 {
@@ -400,12 +483,20 @@ class SmartImagePersonaLibraryManager:
                     "size": path.stat().st_size,
                     "available": True,
                     "readonly": True,
+                    "source": item["source"],
+                    "source_label": item["source_label"],
+                    "caption_status": item["caption_status"],
+                    "caption_status_label": item["caption_status_label"],
                 }
             )
         images.sort(key=lambda item: str(item["filename"]).casefold())
         return {
-            "library_id": SMART_IMAGE_SMART_NAMESPACE,
-            "name": self.ORIGINAL_LIBRARY_NAME,
+            "library_id": key,
+            "name": (
+                self.ORIGINAL_LIBRARY_NAME
+                if source is None
+                else self.ORIGINAL_SOURCE_NAMES[source]
+            ),
             "images": images,
             "readonly": True,
         }
@@ -414,10 +505,13 @@ class SmartImagePersonaLibraryManager:
         self,
         digest: Any,
         image_id: Any,
+        *,
+        library_id: Any,
     ) -> dict[str, Any]:
         image_hash = self._hash(digest)
         requested_id = str(image_id or "").strip()
-        for item in self._original_library_items():
+        source = self.original_library_source(library_id)
+        for item in self._original_library_items(source):
             if requested_id and item["image_id"] != requested_id:
                 continue
             if item["hash"] != image_hash:
@@ -433,10 +527,16 @@ class SmartImagePersonaLibraryManager:
             }
         raise PolicyConfigError("Smart ImageChat Hub 原图库中不存在该图片。")
 
-    def _original_library_items(self) -> list[dict[str, Any]]:
+    def _original_library_items(
+        self,
+        source: str | None = None,
+    ) -> list[dict[str, Any]]:
         target = self._target()
         result = []
-        for candidate in self.adapter.original_library_candidates():
+        for candidate in self.adapter.original_library_images():
+            item_source = str(candidate.get("library_source") or "").strip()
+            if source is not None and item_source != source:
+                continue
             rel_path = target._norm_rel_path(candidate.get("rel_path"))
             if not rel_path:
                 continue
@@ -446,10 +546,8 @@ class SmartImagePersonaLibraryManager:
             image_id = str(
                 candidate.get("id") or target._image_id(rel_path)
             ).strip()
-            index_item = self._smart_index_item(target, image_id, rel_path)
             digest = str(
                 candidate.get("sha256")
-                or index_item.get("sha256")
                 or ""
             ).strip().lower()
             if not self._is_hash(digest):
@@ -468,9 +566,21 @@ class SmartImagePersonaLibraryManager:
                         if candidate.get("tags")
                         else self._source_tags(candidate)
                     ),
+                    "source": item_source,
+                    "source_label": self.ORIGINAL_SOURCE_LABELS.get(
+                        item_source,
+                        "手动上传",
+                    ),
+                    "caption_status": str(
+                        candidate.get("caption_status") or ""
+                    ).strip(),
+                    "caption_status_label": self.CAPTION_STATUS_LABELS.get(
+                        str(candidate.get("caption_status") or "").strip(),
+                        "未标记状态",
+                    ),
                     "added_at": int(
-                        index_item.get("updated_at")
-                        or index_item.get("captioned_at")
+                        candidate.get("updated_at")
+                        or candidate.get("captioned_at")
                         or 0
                     ),
                 }

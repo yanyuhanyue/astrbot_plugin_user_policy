@@ -23,6 +23,16 @@ from .policy_store import (
 log = logging.getLogger(__name__)
 
 SMART_PLUGIN_NAMES = {"astrbot_plugin_smart_imagechat_hub"}
+SMART_IMAGE_MANUAL_SOURCE = "manual_upload"
+SMART_IMAGE_COLLECTED_SOURCE = "auto_collected"
+SMART_IMAGE_EXTERNAL_SOURCE = "external_imported"
+SMART_IMAGE_IMAGEBED_SOURCE = "imagebed_imported"
+SMART_IMAGE_KNOWN_SOURCES = {
+    SMART_IMAGE_MANUAL_SOURCE,
+    SMART_IMAGE_COLLECTED_SOURCE,
+    SMART_IMAGE_EXTERNAL_SOURCE,
+    SMART_IMAGE_IMAGEBED_SOURCE,
+}
 WRAPPED_MARKER = "_user_policy_smart_image_wrapped"
 OWNER_ATTR = "_user_policy_smart_image_owner"
 ORIGINAL_ATTR = "_user_policy_smart_image_original"
@@ -206,6 +216,74 @@ class SmartImageChatPersonaAdapter:
             if isinstance(item, dict)
         ]
 
+    def original_library_images(self) -> list[dict[str, Any]]:
+        """只读 Smart 完整图库索引，不套用聊天检索候选过滤。"""
+
+        target = self.target or self._find_target()
+        if target is None:
+            return []
+        index = getattr(target, "_index", {})
+        images = index.get("images", {}) if isinstance(index, dict) else {}
+        if isinstance(images, dict):
+            entries = images.items()
+        elif isinstance(images, list):
+            entries = enumerate(images)
+        else:
+            return []
+
+        result = []
+        source_getter = getattr(target, "_library_source_for_rel_path", None)
+        tags_getter = getattr(target, "_tags_from_item", None)
+        for key, raw_item in entries:
+            if not isinstance(raw_item, dict):
+                continue
+            item = dict(raw_item)
+            try:
+                rel_path = target._norm_rel_path(item.get("rel_path"))
+                path = target._abs_plugin_data_path(rel_path)
+            except (OSError, TypeError, ValueError):
+                continue
+            if not rel_path or not path.is_file():
+                continue
+
+            source = ""
+            if callable(source_getter):
+                try:
+                    source = str(source_getter(rel_path, item) or "").strip()
+                except Exception:
+                    source = ""
+            if source not in SMART_IMAGE_KNOWN_SOURCES:
+                source = self._infer_library_source(rel_path, item)
+
+            tags: Any = []
+            if callable(tags_getter):
+                try:
+                    tags = tags_getter(item)
+                except Exception:
+                    tags = []
+            if not tags:
+                tags = self._merged_item_tags(item)
+
+            image_id = str(item.get("id") or "").strip()
+            if not image_id and isinstance(key, str):
+                image_id = key.strip()
+            if not image_id:
+                image_id = str(target._image_id(rel_path) or "").strip()
+            result.append(
+                {
+                    **item,
+                    "id": image_id,
+                    "filename": str(item.get("filename") or path.name),
+                    "rel_path": rel_path,
+                    "tags": self._normalize_tags(tags),
+                    "library_source": source,
+                    "caption_status": str(
+                        item.get("caption_status") or ""
+                    ).strip(),
+                }
+            )
+        return result
+
     def bind_event_persona(self, event: Any, decision: Any) -> None:
         persona_id = str(getattr(decision, "persona_id", "") or "").strip()
         if not persona_id and getattr(decision, "persona_mode", "") == "auto":
@@ -370,6 +448,37 @@ class SmartImageChatPersonaAdapter:
             else {}
         )
         return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def _merged_item_tags(cls, item: dict[str, Any]) -> list[str]:
+        result = []
+        for key in (
+            "auto_tags",
+            "manual_tags",
+            "selected_global_tags",
+            "tags",
+        ):
+            for tag in cls._normalize_tags(item.get(key, [])):
+                if tag not in result:
+                    result.append(tag)
+        return result
+
+    @staticmethod
+    def _infer_library_source(
+        rel_path: str,
+        item: dict[str, Any],
+    ) -> str:
+        source = str(item.get("library_source") or "").strip()
+        if source in SMART_IMAGE_KNOWN_SOURCES:
+            return source
+        normalized = str(rel_path or "").replace("\\", "/").casefold()
+        if "auto_collection" in normalized:
+            return SMART_IMAGE_COLLECTED_SOURCE
+        if "external" in normalized:
+            return SMART_IMAGE_EXTERNAL_SOURCE
+        if "imagebed" in normalized:
+            return SMART_IMAGE_IMAGEBED_SOURCE
+        return SMART_IMAGE_MANUAL_SOURCE
 
     def _persona_library_map(self) -> dict[str, str]:
         store = getattr(self.plugin, "store", None)

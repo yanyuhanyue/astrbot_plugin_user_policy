@@ -1646,7 +1646,7 @@
     ["smartImageRenameButton", "smartImageDeleteButton", "smartImageUploadButton"]
       .forEach((id) => { $(`#${id}`).disabled = !currentId || readonly; });
     $("#smartImageLibraryHint").textContent = readonly
-      ? "当前显示 Smart ImageChat Hub 原图库，只读；可点击“复制”创建独立人格图库。"
+      ? "当前显示 Smart ImageChat Hub 只读来源图库；可点击“复制”创建独立人格图库。"
       : "标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。";
     renderSmartImagePersonaMap();
     renderSmartImageGlobalTags();
@@ -1730,13 +1730,19 @@
           data-smart-image-library="${escapeHtml(library?.library_id || "")}">
         <strong>${escapeHtml(item.filename)}</strong>
         <small class="mono">${escapeHtml(item.hash.slice(0, 12))}</small>
+        ${readonly ? `
+          <div class="smart-tag-summary">
+            <span>${escapeHtml(item.source_label || "Smart 原图库")}</span>
+            <span>${escapeHtml(item.caption_status_label || "未标记状态")}</span>
+          </div>
+        ` : ""}
         <div class="smart-tag-summary">
           ${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")
             || '<small>暂无标签</small>'}
         </div>
         <div class="smart-image-actions">
           ${readonly
-            ? '<span class="badge neutral">原图库只读</span>'
+            ? '<span class="badge neutral">来源图库只读</span>'
             : `
               <button class="button small primary" type="button" data-smart-edit-tags="${escapeHtml(item.hash)}">编辑标签</button>
               <button class="button small" type="button" data-smart-caption-image="${escapeHtml(item.hash)}">智能打标</button>
@@ -1746,7 +1752,7 @@
       </article>
     `).join("") || `<div class="empty compact"><strong>当前图库没有图片</strong><span>${
       readonly
-        ? "Smart ImageChat Hub 当前没有已完成标签并可参与检索的图片。"
+        ? "Smart ImageChat Hub 当前来源没有可读取的本地图片。"
         : "可上传图片/ZIP，或从自动偷图缓冲池分发。"
     }</span></div>`;
     hydrateSmartImagePreviews();
