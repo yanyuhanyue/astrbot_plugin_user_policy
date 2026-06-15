@@ -4,38 +4,51 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>多人格管理</title>
-  <link rel="stylesheet" href="./style.css?v=3.5.5">
+  <link rel="stylesheet" href="./style.css?v=3.5.6">
 </head>
 <body>
   <main class="app">
     <header class="page-header">
-      <div>
-        <p class="eyebrow">多人格管理</p>
-        <h1>自由切换每个会话的人格</h1>
-        <p class="subtitle">为私聊用户、群聊和群成员分配不同人格，无需编辑配置文件。</p>
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span>
+        </div>
+        <div>
+          <p class="eyebrow">多人格管理</p>
+          <h1 id="pageTitle">私聊用户</h1>
+          <p class="subtitle" id="pageSubtitle">为指定用户选择人格、控制记忆隔离、使用状态和插件范围。</p>
+        </div>
       </div>
-      <span class="status" id="runtimeStatus">正在读取</span>
+      <div class="header-side">
+        <span class="status" id="runtimeStatus">正在读取</span>
+      </div>
     </header>
 
     <nav class="tabs" aria-label="策略分类">
-      <button class="tab active" data-page="users">私聊用户</button>
-      <button class="tab" data-page="groups">群聊管理</button>
-      <button class="tab" data-page="schedules">人格计划</button>
-      <button class="tab" data-page="integrations">兼容状态</button>
+      <button class="tab active" data-page="users"><span class="tab-icon icon-user"></span><span>私聊用户</span></button>
+      <button class="tab" data-page="groups"><span class="tab-icon icon-group"></span><span>群聊管理</span></button>
+      <button class="tab" data-page="schedules"><span class="tab-icon icon-calendar"></span><span>人格计划</span></button>
+      <button class="tab" data-page="integrations"><span class="tab-icon icon-shield"></span><span>兼容状态</span></button>
     </nav>
 
     <section class="page active" id="page-users">
-      <div class="section-heading">
+      <div class="section-heading page-toolbar no-actions">
         <div>
           <h2>私聊用户</h2>
           <p>为指定用户选择人格、控制记忆隔离、使用状态和插件范围。</p>
         </div>
-        <div class="row-actions">
-          <button class="button" type="button" data-import-sessions>导入已有会话</button>
-          <button class="button primary" type="button" id="addUserButton">添加用户</button>
-        </div>
       </div>
       <div class="card table-card">
+        <div class="content-card-head">
+          <div class="content-card-title">
+            <span class="content-card-icon icon-user" aria-hidden="true"></span>
+            <p>为指定用户选择人格、控制记忆隔离、使用状态和插件范围。</p>
+          </div>
+          <div class="row-actions">
+            <button class="button" type="button" data-import-sessions>导入已有会话</button>
+            <button class="button primary" type="button" id="addUserButton">添加用户</button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -62,7 +75,7 @@
     </section>
 
     <section class="page" id="page-groups">
-      <div class="section-heading">
+      <div class="section-heading page-toolbar">
         <div>
           <h2>群聊管理</h2>
           <p>设置群默认人格、成员名单、策略管理员和插件范围。</p>
@@ -80,7 +93,7 @@
     </section>
 
     <section class="page" id="page-schedules">
-      <div class="section-heading">
+      <div class="section-heading page-toolbar">
         <div>
           <h2>人格计划</h2>
           <p>每天、每周定时切换固定人格，或按间隔从指定范围随机切换。</p>
@@ -95,7 +108,7 @@
     </section>
 
     <section class="page" id="page-integrations">
-      <div class="section-heading">
+      <div class="section-heading page-toolbar no-actions">
         <div>
           <h2>兼容状态</h2>
           <p>检测常见插件状态，并配置少量安全兼容能力。</p>
@@ -893,6 +906,6 @@
   </div>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="./app.js?v=3.5.5"></script>
+  <script src="./app.js?v=3.5.6"></script>
 </body>
 </html>

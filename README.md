@@ -7,7 +7,7 @@
 为不同私聊用户、群聊和群成员自由切换人格
 
 <p>
-  <img src="https://img.shields.io/badge/Version-3.5.5-brightgreen" alt="Version 3.5.5">
+  <img src="https://img.shields.io/badge/Version-3.5.6-brightgreen" alt="Version 3.5.6">
   <img src="https://img.shields.io/badge/AstrBot-%3E%3D4.24.2%2C%3C5-orange" alt="AstrBot >=4.24.2,<5">
   <img src="https://img.shields.io/badge/WebUI-Plugin%20Pages-blue" alt="AstrBot Plugin Pages">
 </p>
@@ -315,7 +315,7 @@ Private Companion 的图片识别由其自身直接调用视觉提供商。原�
 
 `32` 是策略数据的配置修订号，不是插件版本。每次成功保存策略后修订号都会递增，用于阻止旧页面覆盖其他页面刚保存的内容。
 
-插件版本请查看插件信息中的 `3.5.5`。
+插件版本请查看插件信息中的 `3.5.6`。
 
 ### 为什么修改 AstrBot 配置默认人格后，回复还是旧人格？
 

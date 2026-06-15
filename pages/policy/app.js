@@ -82,9 +82,33 @@
     { value: 5, label: "周六" },
     { value: 6, label: "周日" },
   ];
+  const PAGE_META = {
+    users: {
+      title: "自由切换每个会话的人格",
+      subtitle: "为私聊用户、群聊和群成员分配不同人格，无需编辑配置文件。",
+    },
+    groups: {
+      title: "群聊管理",
+      subtitle: "设置群默认人格、成员名单、策略管理员和插件范围。",
+    },
+    schedules: {
+      title: "人格计划",
+      subtitle: "每天、每周定时切换固定人格，或按间隔从指定范围随机切换。",
+    },
+    integrations: {
+      title: "兼容状态",
+      subtitle: "检测常见插件状态，并配置少量安全兼容能力。",
+    },
+  };
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+  function syncPageHeader(page) {
+    const meta = PAGE_META[page] || PAGE_META.users;
+    $("#pageTitle").textContent = meta.title;
+    $("#pageSubtitle").textContent = meta.subtitle;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -446,21 +470,25 @@
     )];
   }
 
+  function statusPill(label, tone = "success") {
+    return `<span class="state-pill ${tone}"><span></span>${escapeHtml(label)}</span>`;
+  }
+
   function renderUsers() {
     $("#usersBody").innerHTML = state.users.map((user) => `
       <tr>
         <td class="mono">${escapeHtml(user.user_id)}</td>
         <td class="text-nowrap">${escapeHtml(personaRuleLabel(user, "跟随会话默认"))}</td>
-        <td class="text-nowrap"><span class="badge ${user.blocked ? "blocked" : ""}">${user.blocked ? "禁止使用" : "允许使用"}</span></td>
-        <td class="text-nowrap">${user.allow_persona_switch ? "已授权" : '<span class="muted">未授权</span>'}</td>
-        <td class="text-nowrap">${escapeHtml(memoryIsolationLabel(user.memory_isolation))}</td>
-        <td class="text-nowrap">${escapeHtml(memoryIsolationLabel(user.livingmemory_isolation))}</td>
-        <td class="text-nowrap">${user.private_companion_proactive !== false ? "允许" : '<span class="muted">关闭</span>'}</td>
-        <td class="text-nowrap">${escapeHtml(pluginModeLabel(user.plugin_access))}</td>
+        <td class="text-nowrap">${statusPill(user.blocked ? "禁止使用" : "允许使用", user.blocked ? "danger" : "success")}</td>
+        <td class="text-nowrap">${statusPill(user.allow_persona_switch ? "已授权" : "未授权", user.allow_persona_switch ? "success" : "neutral")}</td>
+        <td class="text-nowrap">${statusPill(memoryIsolationLabel(user.memory_isolation), user.memory_isolation === false ? "neutral" : "success")}</td>
+        <td class="text-nowrap">${statusPill(memoryIsolationLabel(user.livingmemory_isolation), user.livingmemory_isolation === false ? "neutral" : "success")}</td>
+        <td class="text-nowrap">${statusPill(user.private_companion_proactive !== false ? "允许" : "关闭", user.private_companion_proactive !== false ? "success" : "neutral")}</td>
+        <td class="text-nowrap">${statusPill(pluginModeLabel(user.plugin_access), "success")}</td>
         <td>
           <div class="row-actions">
-            <button class="button small" type="button" data-edit-user="${escapeHtml(user.user_id)}">编辑</button>
-            <button class="button small danger" type="button" data-delete-user="${escapeHtml(user.user_id)}">删除</button>
+            <button class="button icon-button edit" type="button" data-edit-user="${escapeHtml(user.user_id)}" aria-label="编辑用户">编辑</button>
+            <button class="button icon-button danger" type="button" data-delete-user="${escapeHtml(user.user_id)}" aria-label="删除用户">删除</button>
           </div>
         </td>
       </tr>
@@ -475,18 +503,22 @@
         <article class="card group-card">
           <div class="group-card-header">
             <div>
-              <h3 class="mono">${escapeHtml(group.group_id)}</h3>
-              <p>${escapeHtml(group.description || "未填写备注")}</p>
+              <h3><span class="muted mono">default:</span> ${escapeHtml(String(group.group_id || "").split(":").pop())}</h3>
+              <p>用户策略：${escapeHtml(personaRuleLabel(group, "AstrBot 默认人格"))}</p>
             </div>
             <span class="badge neutral">${memberCount} 个成员设置</span>
           </div>
-          <div class="detail-list">
-            <div class="detail-row"><span>默认人格</span><strong>${escapeHtml(personaRuleLabel(group, "跟随会话默认"))}</strong></div>
-            <div class="detail-row"><span>对话记忆</span><strong>${escapeHtml(memoryIsolationLabel(group.memory_isolation))}</strong></div>
-            <div class="detail-row"><span>长期记忆</span><strong>${escapeHtml(memoryIsolationLabel(group.livingmemory_isolation))}</strong></div>
-            <div class="detail-row"><span>成员访问</span><strong>${escapeHtml(memberAccessLabel(group.member_access))}</strong></div>
-            <div class="detail-row"><span>策略管理员</span><strong>${group.policy_admins?.length || 0} 人</strong></div>
-            <div class="detail-row"><span>插件权限</span><strong>${escapeHtml(pluginModeLabel(group.plugin_access))}</strong></div>
+          <div class="detail-panels">
+            <div class="detail-panel">
+              <div class="detail-row"><span>默认人格</span><strong>${escapeHtml(personaRuleLabel(group, "跟随会话默认"))}</strong></div>
+              <div class="detail-row"><span>对话记忆</span><strong>${escapeHtml(memoryIsolationLabel(group.memory_isolation))}</strong></div>
+              <div class="detail-row"><span>长期记忆</span><strong>${escapeHtml(memoryIsolationLabel(group.livingmemory_isolation))}</strong></div>
+            </div>
+            <div class="detail-panel">
+              <div class="detail-row"><span>成员访问</span><strong>${escapeHtml(memberAccessLabel(group.member_access))}</strong></div>
+              <div class="detail-row"><span>策略管理员</span><strong>${group.policy_admins?.length || 0} 人</strong></div>
+              <div class="detail-row"><span>插件权限</span><strong>${escapeHtml(pluginModeLabel(group.plugin_access))}</strong></div>
+            </div>
           </div>
           <div class="group-actions">
             <button class="button small" type="button" data-members-group="${escapeHtml(group.group_id)}">成员设置</button>
@@ -3260,6 +3292,7 @@
       $$(".page").forEach((page) =>
         page.classList.toggle("active", page.id === `page-${target.dataset.page}`)
       );
+      syncPageHeader(target.dataset.page);
       return;
     }
     if (target.id === "addUserButton") return openUserEditor();
@@ -3943,6 +3976,7 @@
     try {
       bridge = await waitForBridge();
       await bridge.ready();
+      syncPageHeader("users");
       await loadData();
     } catch (error) {
       $("#runtimeStatus").textContent = "连接失败";
