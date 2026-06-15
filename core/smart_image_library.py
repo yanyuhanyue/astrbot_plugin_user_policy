@@ -178,10 +178,46 @@ class SmartImagePersonaLibraryManager:
         self,
         library_id: Any = SMART_IMAGE_SMART_NAMESPACE,
     ) -> dict[str, dict[str, Any]]:
+        return self.prepare_original_image_copy(library_id, None)
+
+    def prepare_original_image_copy(
+        self,
+        library_id: Any,
+        selections: Any,
+    ) -> dict[str, dict[str, Any]]:
+        requested: set[tuple[str, str]] | None = None
+        if selections is not None:
+            if not isinstance(selections, list) or not selections:
+                raise PolicyConfigError("请先选择要复制的图片。")
+            requested = set()
+            for selection in selections:
+                if not isinstance(selection, dict):
+                    continue
+                image_id = str(selection.get("image_id") or "").strip()
+                digest = str(selection.get("hash") or "").strip().lower()
+                if image_id or self._is_hash(digest):
+                    requested.add((image_id, digest))
+            if not requested:
+                raise PolicyConfigError("选中的图片标识无效。")
+
         members: dict[str, dict[str, Any]] = {}
         now = int(time.time())
         source = self.original_library_source(library_id)
         for item in self._original_library_items(source):
+            if requested is not None and not any(
+                (
+                    image_id
+                    and image_id == item["image_id"]
+                    and (not digest or digest == item["hash"])
+                )
+                or (
+                    not image_id
+                    and digest
+                    and digest == item["hash"]
+                )
+                for image_id, digest in requested
+            ):
+                continue
             path = item["path"]
             image_hash, extension = self._store_file(path)
             members[image_hash] = {
@@ -190,6 +226,8 @@ class SmartImagePersonaLibraryManager:
                 "tags": list(item["tags"]),
                 "added_at": now,
             }
+        if requested is not None and not members:
+            raise PolicyConfigError("选中的 Smart ImageChat Hub 图片已失效。")
         return members
 
     @classmethod

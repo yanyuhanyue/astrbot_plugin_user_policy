@@ -674,6 +674,7 @@ td { font-size: 14px; }
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+  cursor: pointer;
 }
 .smart-image-card.is-selected {
   border-color: var(--primary);
@@ -720,6 +721,17 @@ td { font-size: 14px; }
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.smart-image-batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.smart-image-batch-bar strong {
+  color: var(--primary);
+  font-size: 13px;
 }
 .smart-tag-editor {
   display: grid;

@@ -64,6 +64,8 @@
       library: null,
       pending: { images: [] },
       selectedPending: new Set(),
+      selectedImages: new Set(),
+      selectedImageTargets: new Set(),
       previewCache: new Map(),
       pendingPreviewCache: new Map(),
       nameAction: null,
@@ -1623,6 +1625,49 @@
     ) || null;
   }
 
+  function smartImageSelectionKey(item) {
+    return `${item.image_id || ""}::${item.hash || ""}`;
+  }
+
+  function selectedSmartImages() {
+    const selected = state.smartImage.selectedImages;
+    return (state.smartImage.library?.images || []).filter(
+      (item) => selected.has(smartImageSelectionKey(item))
+    );
+  }
+
+  function renderSmartImageBatchBar() {
+    const selected = selectedSmartImages();
+    const readonly = Boolean(state.smartImage.library?.readonly);
+    const currentId = currentSmartImageLibraryId();
+    const targets = (state.smartImage.targets || []).filter(
+      (item) => !item.readonly && item.library_id !== currentId
+    );
+    const targetIds = new Set(targets.map((item) => item.library_id));
+    for (const targetId of [...state.smartImage.selectedImageTargets]) {
+      if (!targetIds.has(targetId)) {
+        state.smartImage.selectedImageTargets.delete(targetId);
+      }
+    }
+    const visible = selected.length > 0;
+    $("#smartImageBatchBar").classList.toggle("hidden", !visible);
+    $("#smartImageBatchTargetList").classList.toggle("hidden", !visible);
+    $("#smartImageSelectedCount").textContent = `已选 ${selected.length} 张`;
+    $("#smartImageBatchMoveButton").classList.toggle("hidden", readonly);
+    $("#smartImageBatchDeleteButton").classList.toggle("hidden", readonly);
+    $("#smartImageBatchTargetList").innerHTML = targets.map((item) => `
+      <label class="smart-target-choice">
+        <input type="checkbox" data-smart-image-batch-target value="${escapeHtml(item.library_id)}"
+          ${state.smartImage.selectedImageTargets.has(item.library_id) ? "checked" : ""}>
+        <span>${escapeHtml(item.name)}</span>
+      </label>
+    `).join("") || (
+      visible
+        ? '<span class="muted">没有其他可写的人格图库。</span>'
+        : ""
+    );
+  }
+
   function renderSmartImageManager() {
     const smart = state.smartImage;
     const currentId = currentSmartImageLibraryId();
@@ -1645,6 +1690,7 @@
     $("#smartImageCopyButton").disabled = !currentId;
     ["smartImageRenameButton", "smartImageDeleteButton", "smartImageUploadButton"]
       .forEach((id) => { $(`#${id}`).disabled = !currentId || readonly; });
+    $("#smartImageDeleteButton").classList.toggle("hidden", readonly);
     $("#smartImageLibraryHint").textContent = readonly
       ? "当前显示 Smart ImageChat Hub 只读来源图库；可点击“复制”创建独立人格图库。"
       : "标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。";
@@ -1722,8 +1768,14 @@
     const library = state.smartImage.library;
     const images = library?.images || [];
     const readonly = Boolean(library?.readonly);
+    const selected = state.smartImage.selectedImages;
+    const validKeys = new Set(images.map(smartImageSelectionKey));
+    for (const key of [...selected]) {
+      if (!validKeys.has(key)) selected.delete(key);
+    }
     $("#smartImageGrid").innerHTML = images.map((item) => `
-      <article class="smart-image-card">
+      <article class="smart-image-card ${selected.has(smartImageSelectionKey(item)) ? "is-selected" : ""}"
+        data-smart-image-select="${escapeHtml(smartImageSelectionKey(item))}">
         <img alt="${escapeHtml(item.filename)}"
           data-smart-image-preview="${escapeHtml(item.hash)}"
           data-smart-image-id="${escapeHtml(item.image_id || "")}"
@@ -1755,6 +1807,7 @@
         ? "Smart ImageChat Hub 当前来源没有可读取的本地图片。"
         : "可上传图片/ZIP，或从自动偷图缓冲池分发。"
     }</span></div>`;
+    renderSmartImageBatchBar();
     hydrateSmartImagePreviews();
   }
 
@@ -1818,6 +1871,8 @@
     if (!libraryId) {
       state.smartImage.library = null;
       state.smartImage.currentLibraryId = "";
+      state.smartImage.selectedImages.clear();
+      state.smartImage.selectedImageTargets.clear();
       renderSmartImageManager();
       return;
     }
@@ -1827,6 +1882,8 @@
       });
       state.smartImage.library = library;
       state.smartImage.currentLibraryId = libraryId;
+      state.smartImage.selectedImages.clear();
+      state.smartImage.selectedImageTargets.clear();
       renderSmartImageManager();
     } catch (error) {
       toast(error.message || String(error), "error");
@@ -1907,6 +1964,68 @@
       await loadSmartImageLibrary(currentSmartImageLibraryId());
       renderSmartPendingGrid();
     }
+  }
+
+  async function distributeSelectedSmartImages(move) {
+    const images = selectedSmartImages().map((item) => ({
+      hash: item.hash,
+      image_id: item.image_id || "",
+    }));
+    const targetIds = $$("[data-smart-image-batch-target]:checked").map(
+      (item) => item.value
+    );
+    if (!images.length) {
+      toast("请先选择当前图库图片。", "error");
+      return;
+    }
+    if (!targetIds.length) {
+      toast("请至少选择一个目标人格图库。", "error");
+      return;
+    }
+    if (move && state.smartImage.library?.readonly) {
+      toast("Smart ImageChat Hub 来源图库为只读，只能复制图片。", "error");
+      return;
+    }
+    const result = await smartImageMutate("smart-image/images/distribute", {
+      source_library_id: currentSmartImageLibraryId(),
+      target_library_ids: targetIds,
+      images,
+      move: Boolean(move),
+    }, move ? "选中图片已移动。" : "选中图片已复制。");
+    if (!result) return;
+    state.smartImage.selectedImages.clear();
+    state.smartImage.selectedImageTargets.clear();
+    if (result.library) state.smartImage.library = result.library;
+    renderSmartImageGrid();
+  }
+
+  function deleteSelectedSmartImages() {
+    if (state.smartImage.library?.readonly) {
+      toast("Smart ImageChat Hub 来源图库不能删除图片。", "error");
+      return;
+    }
+    const hashes = selectedSmartImages().map((item) => item.hash);
+    if (!hashes.length) {
+      toast("请先选择要删除的图片。", "error");
+      return;
+    }
+    requestDelete({
+      title: "删除选中图片",
+      message: `确定从当前人格图库删除选中的 ${hashes.length} 张图片吗？`,
+      successMessage: "选中图片已删除。",
+      action: async () => {
+        const result = await smartImageMutate("smart-image/images/delete", {
+          library_id: currentSmartImageLibraryId(),
+          hashes,
+        }, "选中图片已删除。");
+        if (!result) return false;
+        state.smartImage.selectedImages.clear();
+        state.smartImage.selectedImageTargets.clear();
+        if (result.library) state.smartImage.library = result.library;
+        renderSmartImageGrid();
+        return true;
+      },
+    });
   }
 
   function deleteSmartPending() {
@@ -3079,6 +3198,24 @@
         return;
       }
     }
+    const smartImageCard = event.target.closest("[data-smart-image-select]");
+    if (
+      smartImageCard
+      && !event.target.closest("button, input, select, textarea")
+    ) {
+      const key = smartImageCard.dataset.smartImageSelect;
+      if (state.smartImage.selectedImages.has(key)) {
+        state.smartImage.selectedImages.delete(key);
+      } else {
+        state.smartImage.selectedImages.add(key);
+      }
+      smartImageCard.classList.toggle(
+        "is-selected",
+        state.smartImage.selectedImages.has(key)
+      );
+      renderSmartImageBatchBar();
+      return;
+    }
     const smartPendingCard = event.target.closest("[data-smart-pending-select]");
     if (smartPendingCard && !event.target.closest("button, input, select, textarea")) {
       const imageId = smartPendingCard.dataset.smartPendingSelect;
@@ -3212,6 +3349,18 @@
     }
     if (target.id === "smartPendingDeleteButton") {
       deleteSmartPending();
+      return;
+    }
+    if (target.id === "smartImageBatchCopyButton") {
+      await distributeSelectedSmartImages(false);
+      return;
+    }
+    if (target.id === "smartImageBatchMoveButton") {
+      await distributeSelectedSmartImages(true);
+      return;
+    }
+    if (target.id === "smartImageBatchDeleteButton") {
+      deleteSelectedSmartImages();
       return;
     }
     if (target.dataset.smartEditTags !== undefined) {
@@ -3655,6 +3804,21 @@
     await confirmSmartImageName();
   });
   document.addEventListener("change", (event) => {
+    const smartImageBatchTarget = event.target.closest(
+      "input[data-smart-image-batch-target]"
+    );
+    if (smartImageBatchTarget) {
+      if (smartImageBatchTarget.checked) {
+        state.smartImage.selectedImageTargets.add(
+          smartImageBatchTarget.value
+        );
+      } else {
+        state.smartImage.selectedImageTargets.delete(
+          smartImageBatchTarget.value
+        );
+      }
+      return;
+    }
     const poolSelect = event.target.closest("input[data-life-pool-select]");
     if (poolSelect) {
       const key = poolSelect.dataset.lifePoolSelect;

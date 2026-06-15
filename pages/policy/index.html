@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>多人格管理</title>
-  <link rel="stylesheet" href="./style.css?v=3.5.4">
+  <link rel="stylesheet" href="./style.css?v=3.5.5">
 </head>
 <body>
   <main class="app">
@@ -717,7 +717,14 @@
             <h3>当前图库图片</h3>
             <small class="muted" id="smartImageLibraryHint">标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。</small>
           </div>
+          <div class="smart-image-batch-bar hidden" id="smartImageBatchBar">
+            <strong id="smartImageSelectedCount">已选 0 张</strong>
+            <button class="button small" type="button" id="smartImageBatchCopyButton">复制到所选图库</button>
+            <button class="button small primary" type="button" id="smartImageBatchMoveButton">移动到所选图库</button>
+            <button class="button small danger" type="button" id="smartImageBatchDeleteButton">删除选中图片</button>
+          </div>
         </div>
+        <div class="smart-target-list hidden" id="smartImageBatchTargetList"></div>
         <div class="smart-image-grid" id="smartImageGrid"></div>
       </section>
       <input id="smartImageUploadInput" class="hidden" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.zip,image/png,image/jpeg,image/gif,image/webp,application/zip,application/x-zip-compressed" multiple>
@@ -886,6 +893,6 @@
   </div>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="./app.js?v=3.5.4"></script>
+  <script src="./app.js?v=3.5.5"></script>
 </body>
 </html>

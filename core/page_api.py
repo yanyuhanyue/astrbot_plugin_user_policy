@@ -284,6 +284,12 @@ class PluginPageApi:
                 "删除智能图片人格图库图片",
             ),
             (
+                "smart-image/images/distribute",
+                self.distribute_smart_images,
+                ["POST"],
+                "复制或移动智能图片人格图库图片",
+            ),
+            (
                 "smart-image/images/tags/save",
                 self.save_smart_image_tags,
                 ["POST"],
@@ -1410,6 +1416,111 @@ class PluginPageApi:
             config,
             f"已从图库移除 {len(hashes)} 张图片，回收 {removed} 个文件。",
             library=self._smart_image_manager().describe(library_id),
+        )
+
+    async def distribute_smart_images(self):
+        payload = await self._json_payload()
+        revision = self._revision(payload)
+        source_id = str(
+            payload.get("source_library_id", "") or ""
+        ).strip()
+        target_ids = {
+            str(item or "").strip()
+            for item in payload.get("target_library_ids", [])
+            if str(item or "").strip()
+        }
+        target_ids.discard(source_id)
+        if not target_ids:
+            raise PolicyConfigError("请至少选择一个其他目标人格图库。")
+
+        manager = self._smart_image_manager()
+        readonly_source = manager.is_original_library_id(source_id)
+        move = payload.get("move") is True
+        if readonly_source and move:
+            raise PolicyConfigError(
+                "Smart ImageChat Hub 来源图库为只读，只能复制图片。"
+            )
+
+        selected_hashes = {
+            str(item.get("hash") or "").strip().lower()
+            for item in payload.get("images", [])
+            if isinstance(item, dict)
+            and str(item.get("hash") or "").strip()
+        }
+        if not selected_hashes:
+            raise PolicyConfigError("请先选择要操作的图片。")
+
+        prepared: dict[str, dict[str, Any]] | None = None
+        if readonly_source:
+            store = self.plugin.store
+            if store is None:
+                raise PolicyConfigError("策略数据尚未加载。")
+            if revision != store.revision:
+                raise PolicyConflictError(
+                    "数据已被其他页面更新，请刷新后再修改。"
+                )
+            prepared = manager.prepare_original_image_copy(
+                source_id,
+                payload.get("images"),
+            )
+
+        copied_count = 0
+
+        def mutate(config: dict[str, Any]) -> None:
+            nonlocal copied_count
+            libraries = config.setdefault("smart_image_libraries", {})
+            missing = sorted(target_ids - set(libraries))
+            if missing:
+                raise PolicyConfigError("部分目标人格图库不存在。")
+
+            if prepared is not None:
+                members = prepared
+            else:
+                source = libraries.get(source_id)
+                if not isinstance(source, dict):
+                    raise PolicyConfigError("源智能图片人格图库不存在。")
+                source_images = source.setdefault("images", {})
+                members = {
+                    digest: {
+                        **item,
+                        "tags": list(item.get("tags", []) or []),
+                    }
+                    for digest, item in source_images.items()
+                    if digest in selected_hashes and isinstance(item, dict)
+                }
+                if not members:
+                    raise PolicyConfigError("选中的图片已不在当前图库中。")
+
+            copied_count = len(members)
+            for target_id in target_ids:
+                target_images = libraries[target_id].setdefault("images", {})
+                target_images.update(
+                    {
+                        digest: {
+                            **item,
+                            "tags": list(item.get("tags", []) or []),
+                        }
+                        for digest, item in members.items()
+                    }
+                )
+            if move:
+                source_images = libraries[source_id].setdefault("images", {})
+                for digest in members:
+                    source_images.pop(digest, None)
+
+        config = await self.plugin.update_policy(revision, mutate)
+        if move:
+            manager.purge_unreferenced_pool()
+        action = "移动" if move else "复制"
+        return self._smart_image_saved(
+            config,
+            (
+                f"已将 {copied_count} 张图片{action}到 "
+                f"{len(target_ids)} 个人格图库。"
+            ),
+            library=manager.describe(source_id),
+            copied_count=copied_count,
+            moved=move,
         )
 
     async def save_smart_image_tags(self):
