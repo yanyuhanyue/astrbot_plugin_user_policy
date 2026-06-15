@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>多人格管理</title>
-  <link rel="stylesheet" href="./style.css?v=3.5.2">
+  <link rel="stylesheet" href="./style.css?v=3.5.3">
 </head>
 <body>
   <main class="app">
@@ -668,7 +668,7 @@
           <span>图库操作</span>
           <div class="row-actions">
             <button class="button small primary" type="button" id="smartImageUploadButton">上传图片或 ZIP</button>
-            <button class="button small" type="button" id="smartImageBackupButton">备份全部图库</button>
+            <button class="button small" type="button" id="smartImageBackupButton">备份全部人格图库</button>
           </div>
         </div>
       </div>
@@ -715,7 +715,7 @@
         <div class="section-heading compact">
           <div>
             <h3>当前图库图片</h3>
-            <small class="muted">标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。</small>
+            <small class="muted" id="smartImageLibraryHint">标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。</small>
           </div>
         </div>
         <div class="smart-image-grid" id="smartImageGrid"></div>
@@ -886,6 +886,6 @@
   </div>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="./app.js?v=3.5.2"></script>
+  <script src="./app.js?v=3.5.3"></script>
 </body>
 </html>

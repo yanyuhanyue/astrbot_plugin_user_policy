@@ -15,6 +15,7 @@ from .meme_library import MemePersonaLibraryManager
 from .smart_image_library import SmartImagePersonaLibraryManager
 from .policy_store import (
     MEME_DEFAULT_LIBRARY_ID,
+    SMART_IMAGE_SMART_NAMESPACE,
     PolicyConfigError,
     PolicyConflictError,
     PolicyStore,
@@ -1238,7 +1239,11 @@ class PluginPageApi:
     async def smart_image_preview(self):
         payload = await self._json_payload()
         return self._ok(
-            self._smart_image_manager().image_payload(payload.get("hash"))
+            self._smart_image_manager().image_payload(
+                payload.get("hash"),
+                library_id=payload.get("library_id"),
+                image_id=payload.get("image_id"),
+            )
         )
 
     async def smart_image_pending_preview(self):
@@ -1315,28 +1320,45 @@ class PluginPageApi:
             payload.get("name")
         )
         library_id = uuid4().hex
+        manager = self._smart_image_manager()
+        copied_images: dict[str, dict[str, Any]] | None = None
+        copied_count = 0
+        if source_id == SMART_IMAGE_SMART_NAMESPACE:
+            store = self.plugin.store
+            if store is None:
+                raise PolicyConfigError("策略数据尚未加载。")
+            if revision != store.revision:
+                raise PolicyConflictError(
+                    "数据已被其他页面更新，请刷新后再修改。"
+                )
+            copied_images = manager.prepare_original_library_copy()
 
         def mutate(config: dict[str, Any]) -> None:
-            source = config.setdefault("smart_image_libraries", {}).get(
-                source_id
-            )
-            if not isinstance(source, dict):
-                raise PolicyConfigError("源智能图片人格图库不存在。")
-            config["smart_image_libraries"][library_id] = {
-                "name": name,
-                "images": {
+            nonlocal copied_count
+            libraries = config.setdefault("smart_image_libraries", {})
+            if copied_images is not None:
+                images = copied_images
+            else:
+                source = libraries.get(source_id)
+                if not isinstance(source, dict):
+                    raise PolicyConfigError("源智能图片人格图库不存在。")
+                images = {
                     digest: {
                         **item,
                         "tags": list(item.get("tags", []) or []),
                     }
                     for digest, item in source.get("images", {}).items()
-                },
+                }
+            copied_count = len(images)
+            libraries[library_id] = {
+                "name": name,
+                "images": images,
             }
 
         config = await self.plugin.update_policy(revision, mutate)
         return self._smart_image_saved(
             config,
-            f"已复制为智能图片图库「{name}」。",
+            f"已复制为智能图片图库「{name}」，共 {copied_count} 张图片。",
             library_id=library_id,
         )
 

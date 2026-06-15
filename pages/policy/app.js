@@ -1606,14 +1606,34 @@
   }
 
   function currentSmartImageLibraryId() {
-    return state.smartImage.currentLibraryId
-      || state.smartImage.targets?.[0]?.library_id
-      || "";
+    const current = state.smartImage.currentLibraryId;
+    if (
+      current
+      && state.smartImage.targets?.some((item) => item.library_id === current)
+    ) {
+      return current;
+    }
+    return state.smartImage.targets?.[0]?.library_id || "";
+  }
+
+  function currentSmartImageTarget() {
+    const currentId = currentSmartImageLibraryId();
+    return (state.smartImage.targets || []).find(
+      (item) => item.library_id === currentId
+    ) || null;
   }
 
   function renderSmartImageManager() {
     const smart = state.smartImage;
     const currentId = currentSmartImageLibraryId();
+    const currentTarget = currentSmartImageTarget();
+    const readonly = Boolean(
+      currentTarget?.readonly
+      || (
+        smart.library?.library_id === currentId
+        && smart.library?.readonly
+      )
+    );
     $("#smartImageLibrarySelect").innerHTML = smart.targets.length
       ? smart.targets.map((item) => `
         <option value="${escapeHtml(item.library_id)}" ${item.library_id === currentId ? "selected" : ""}>
@@ -1622,8 +1642,12 @@
       : '<option value="">尚未创建人格图库</option>';
     $("#smartImageLibraryStatus").textContent = smart.library?.name || "尚未选择图库";
     $("#smartImageRuntimeStatus").textContent = smart.status?.message || "等待运行时适配";
-    ["smartImageRenameButton", "smartImageCopyButton", "smartImageDeleteButton", "smartImageUploadButton"]
-      .forEach((id) => { $(`#${id}`).disabled = !currentId; });
+    $("#smartImageCopyButton").disabled = !currentId;
+    ["smartImageRenameButton", "smartImageDeleteButton", "smartImageUploadButton"]
+      .forEach((id) => { $(`#${id}`).disabled = !currentId || readonly; });
+    $("#smartImageLibraryHint").textContent = readonly
+      ? "当前显示 Smart ImageChat Hub 原图库，只读；可点击“复制”创建独立人格图库。"
+      : "标签仅属于当前人格图库，不会写入 Smart ImageChat Hub 原索引。";
     renderSmartImagePersonaMap();
     renderSmartImageGlobalTags();
     renderSmartPendingTargets();
@@ -1651,7 +1675,9 @@
   }
 
   function renderSmartImagePersonaMap() {
-    const libraries = state.smartImage.targets || [];
+    const libraries = (state.smartImage.targets || []).filter(
+      (library) => !library.readonly
+    );
     const mapping = state.smartImage.personaLibraryMap || {};
     $("#smartImagePersonaMapList").innerHTML = state.personas.map((persona) => `
       <label class="persona-map-item">
@@ -1668,7 +1694,10 @@
   }
 
   function renderSmartPendingTargets() {
-    $("#smartPendingTargetList").innerHTML = (state.smartImage.targets || []).map((item) => `
+    const targets = (state.smartImage.targets || []).filter(
+      (item) => !item.readonly
+    );
+    $("#smartPendingTargetList").innerHTML = targets.map((item) => `
       <label class="smart-target-choice">
         <input type="checkbox" data-smart-pending-target value="${escapeHtml(item.library_id)}">
         <span>${escapeHtml(item.name)}</span>
@@ -1692,9 +1721,13 @@
   function renderSmartImageGrid() {
     const library = state.smartImage.library;
     const images = library?.images || [];
+    const readonly = Boolean(library?.readonly);
     $("#smartImageGrid").innerHTML = images.map((item) => `
       <article class="smart-image-card">
-        <img alt="${escapeHtml(item.filename)}" data-smart-image-preview="${escapeHtml(item.hash)}">
+        <img alt="${escapeHtml(item.filename)}"
+          data-smart-image-preview="${escapeHtml(item.hash)}"
+          data-smart-image-id="${escapeHtml(item.image_id || "")}"
+          data-smart-image-library="${escapeHtml(library?.library_id || "")}">
         <strong>${escapeHtml(item.filename)}</strong>
         <small class="mono">${escapeHtml(item.hash.slice(0, 12))}</small>
         <div class="smart-tag-summary">
@@ -1702,23 +1735,38 @@
             || '<small>暂无标签</small>'}
         </div>
         <div class="smart-image-actions">
-          <button class="button small primary" type="button" data-smart-edit-tags="${escapeHtml(item.hash)}">编辑标签</button>
-          <button class="button small" type="button" data-smart-caption-image="${escapeHtml(item.hash)}">智能打标</button>
-          <button class="button small danger" type="button" data-smart-delete-image="${escapeHtml(item.hash)}">移除</button>
+          ${readonly
+            ? '<span class="badge neutral">原图库只读</span>'
+            : `
+              <button class="button small primary" type="button" data-smart-edit-tags="${escapeHtml(item.hash)}">编辑标签</button>
+              <button class="button small" type="button" data-smart-caption-image="${escapeHtml(item.hash)}">智能打标</button>
+              <button class="button small danger" type="button" data-smart-delete-image="${escapeHtml(item.hash)}">移除</button>
+            `}
         </div>
       </article>
-    `).join("") || '<div class="empty compact"><strong>当前图库没有图片</strong><span>可上传图片/ZIP，或从自动偷图缓冲池分发。</span></div>';
+    `).join("") || `<div class="empty compact"><strong>当前图库没有图片</strong><span>${
+      readonly
+        ? "Smart ImageChat Hub 当前没有已完成标签并可参与检索的图片。"
+        : "可上传图片/ZIP，或从自动偷图缓冲池分发。"
+    }</span></div>`;
     hydrateSmartImagePreviews();
   }
 
   async function hydrateSmartImagePreviews() {
     for (const image of $$("img[data-smart-image-preview]")) {
       const hash = image.dataset.smartImagePreview;
-      let preview = state.smartImage.previewCache.get(hash);
+      const libraryId = image.dataset.smartImageLibrary || "";
+      const imageId = image.dataset.smartImageId || "";
+      const cacheKey = `${libraryId}:${imageId || hash}`;
+      let preview = state.smartImage.previewCache.get(cacheKey);
       if (!preview) {
         try {
-          preview = (await apiPost("smart-image/image/preview", { hash })).preview;
-          if (preview) state.smartImage.previewCache.set(hash, preview);
+          preview = (await apiPost("smart-image/image/preview", {
+            hash,
+            library_id: libraryId,
+            image_id: imageId,
+          })).preview;
+          if (preview) state.smartImage.previewCache.set(cacheKey, preview);
         } catch (_) {
           continue;
         }
@@ -1816,6 +1864,10 @@
 
   async function uploadSmartImageFiles(fileList) {
     const libraryId = currentSmartImageLibraryId();
+    if (currentSmartImageTarget()?.readonly) {
+      toast("Smart ImageChat Hub 原图库为只读，请先复制或创建人格图库。", "error");
+      return;
+    }
     const files = [...(fileList || [])];
     if (!libraryId || !files.length) return;
     const encoded = [];
@@ -1915,6 +1967,10 @@
   function openSmartImageNameModal(mode) {
     const libraryId = currentSmartImageLibraryId();
     if (!libraryId) return;
+    if (mode !== "copy" && currentSmartImageTarget()?.readonly) {
+      toast("Smart ImageChat Hub 原图库不能重命名。", "error");
+      return;
+    }
     const currentName = state.smartImage.libraries?.[libraryId]?.name
       || state.smartImage.library?.name
       || libraryId;
@@ -1990,7 +2046,9 @@
       </label>
     `).join("") || '<span class="muted">其他图库中没有这张相同图片。</span>';
     $("#smartImageTagApplyButton").disabled = matchingTargets.length === 0;
-    const preview = state.smartImage.previewCache.get(imageHash);
+    const currentLibraryId = currentSmartImageLibraryId();
+    const previewCacheKey = `${currentLibraryId}:${image.image_id || imageHash}`;
+    const preview = state.smartImage.previewCache.get(previewCacheKey);
     $("#smartImageTagPreview").removeAttribute("src");
     if (preview) {
       $("#smartImageTagPreview").src = preview;
@@ -2000,9 +2058,14 @@
       try {
         const payload = await apiPost("smart-image/image/preview", {
           hash: imageHash,
+          library_id: currentLibraryId,
+          image_id: image.image_id || "",
         });
         if (payload.preview) {
-          state.smartImage.previewCache.set(imageHash, payload.preview);
+          state.smartImage.previewCache.set(
+            previewCacheKey,
+            payload.preview
+          );
           if (state.smartImage.tagEditorHash === imageHash) {
             $("#smartImageTagPreview").src = payload.preview;
           }
@@ -2074,6 +2137,10 @@
   function deleteSmartImageLibrary() {
     const libraryId = currentSmartImageLibraryId();
     if (!libraryId) return;
+    if (currentSmartImageTarget()?.readonly) {
+      toast("Smart ImageChat Hub 原图库不能删除。", "error");
+      return;
+    }
     const name = state.smartImage.libraries?.[libraryId]?.name
       || state.smartImage.library?.name
       || libraryId;

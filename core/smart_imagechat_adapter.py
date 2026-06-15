@@ -181,6 +181,31 @@ class SmartImageChatPersonaAdapter:
             self._nested_value(config, "library_builder.global_tags", [])
         )
 
+    def original_library_candidates(self) -> list[dict[str, Any]]:
+        """通过 Smart 自身入口只读原图库候选，避免直接解析其索引文件。"""
+
+        target = self.target or self._find_target()
+        if target is None:
+            return []
+        method = self._original
+        if not callable(method):
+            current = getattr(target, "_library_candidates", None)
+            method = self._unwrap(current) if callable(current) else None
+        if not callable(method):
+            return []
+        try:
+            candidates = method()
+        except Exception as exc:
+            log.warning("[用户策略] 读取 Smart 原图库失败：%s", exc)
+            return []
+        if not isinstance(candidates, list):
+            return []
+        return [
+            dict(item)
+            for item in candidates
+            if isinstance(item, dict)
+        ]
+
     def bind_event_persona(self, event: Any, decision: Any) -> None:
         persona_id = str(getattr(decision, "persona_id", "") or "").strip()
         if not persona_id and getattr(decision, "persona_mode", "") == "auto":

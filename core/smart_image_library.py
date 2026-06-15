@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .policy_store import (
+    SMART_IMAGE_SMART_NAMESPACE,
     SMART_IMAGE_LIBRARY_NAME_MAX,
     SMART_IMAGE_TAG_MAX,
     SMART_IMAGE_TAGS_PER_IMAGE_MAX,
@@ -33,11 +34,25 @@ MAX_ARCHIVE_ENTRIES = 2000
 class SmartImagePersonaLibraryManager:
     """维护内容寻址图片池和人格图库逻辑成员。"""
 
+    ORIGINAL_LIBRARY_NAME = "Smart ImageChat Hub 原图库（只读）"
+
     def __init__(self, adapter: SmartImageChatPersonaAdapter):
         self.adapter = adapter
 
     def targets(self) -> list[dict[str, Any]]:
         items = []
+        target = self.adapter.target or self.adapter._find_target()
+        if target is not None:
+            items.append(
+                {
+                    "library_id": SMART_IMAGE_SMART_NAMESPACE,
+                    "name": self.ORIGINAL_LIBRARY_NAME,
+                    "image_count": len(
+                        self.adapter.original_library_candidates()
+                    ),
+                    "readonly": True,
+                }
+            )
         for library_id, library in self.adapter._libraries().items():
             images = library.get("images", {}) if isinstance(library, dict) else {}
             items.append(
@@ -45,11 +60,20 @@ class SmartImagePersonaLibraryManager:
                     "library_id": library_id,
                     "name": str(library.get("name", "") or library_id),
                     "image_count": len(images) if isinstance(images, dict) else 0,
+                    "readonly": False,
                 }
             )
-        return sorted(items, key=lambda item: item["name"].casefold())
+        return sorted(
+            items,
+            key=lambda item: (
+                not bool(item.get("readonly")),
+                item["name"].casefold(),
+            ),
+        )
 
     def describe(self, library_id: Any) -> dict[str, Any]:
+        if str(library_id or "").strip() == SMART_IMAGE_SMART_NAMESPACE:
+            return self._describe_original_library()
         library_id, library = self._library(library_id)
         images = []
         for digest, item in library.get("images", {}).items():
@@ -75,9 +99,18 @@ class SmartImagePersonaLibraryManager:
             "library_id": library_id,
             "name": str(library.get("name") or library_id),
             "images": images,
+            "readonly": False,
         }
 
-    def image_payload(self, digest: Any) -> dict[str, Any]:
+    def image_payload(
+        self,
+        digest: Any,
+        *,
+        library_id: Any = "",
+        image_id: Any = "",
+    ) -> dict[str, Any]:
+        if str(library_id or "").strip() == SMART_IMAGE_SMART_NAMESPACE:
+            return self._original_image_payload(digest, image_id)
         image_hash = self._hash(digest)
         path = self._find_pool_file(image_hash)
         if not path.is_file():
@@ -89,6 +122,20 @@ class SmartImagePersonaLibraryManager:
             "size": len(data),
             "preview": self._data_url(path.suffix, data),
         }
+
+    def prepare_original_library_copy(self) -> dict[str, dict[str, Any]]:
+        members: dict[str, dict[str, Any]] = {}
+        now = int(time.time())
+        for item in self._original_library_items():
+            path = item["path"]
+            image_hash, extension = self._store_file(path)
+            members[image_hash] = {
+                "ext": extension,
+                "filename": item["filename"],
+                "tags": list(item["tags"]),
+                "added_at": now,
+            }
+        return members
 
     def pending_snapshot(self) -> dict[str, Any]:
         target = self._target()
@@ -337,6 +384,147 @@ class SmartImagePersonaLibraryManager:
         if not isinstance(library, dict):
             raise PolicyConfigError("智能图片人格图库不存在。")
         return key, library
+
+    def _describe_original_library(self) -> dict[str, Any]:
+        images = []
+        for item in self._original_library_items():
+            path = item["path"]
+            images.append(
+                {
+                    "hash": item["hash"],
+                    "image_id": item["image_id"],
+                    "filename": item["filename"],
+                    "ext": path.suffix.lstrip(".").lower(),
+                    "tags": list(item["tags"]),
+                    "added_at": int(item.get("added_at", 0) or 0),
+                    "size": path.stat().st_size,
+                    "available": True,
+                    "readonly": True,
+                }
+            )
+        images.sort(key=lambda item: str(item["filename"]).casefold())
+        return {
+            "library_id": SMART_IMAGE_SMART_NAMESPACE,
+            "name": self.ORIGINAL_LIBRARY_NAME,
+            "images": images,
+            "readonly": True,
+        }
+
+    def _original_image_payload(
+        self,
+        digest: Any,
+        image_id: Any,
+    ) -> dict[str, Any]:
+        image_hash = self._hash(digest)
+        requested_id = str(image_id or "").strip()
+        for item in self._original_library_items():
+            if requested_id and item["image_id"] != requested_id:
+                continue
+            if item["hash"] != image_hash:
+                continue
+            path = item["path"]
+            data = path.read_bytes()
+            return {
+                "hash": image_hash,
+                "image_id": item["image_id"],
+                "filename": item["filename"],
+                "size": len(data),
+                "preview": self._data_url(path.suffix, data),
+            }
+        raise PolicyConfigError("Smart ImageChat Hub 原图库中不存在该图片。")
+
+    def _original_library_items(self) -> list[dict[str, Any]]:
+        target = self._target()
+        result = []
+        for candidate in self.adapter.original_library_candidates():
+            rel_path = target._norm_rel_path(candidate.get("rel_path"))
+            if not rel_path:
+                continue
+            path = target._abs_plugin_data_path(rel_path)
+            if not path.is_file():
+                continue
+            image_id = str(
+                candidate.get("id") or target._image_id(rel_path)
+            ).strip()
+            index_item = self._smart_index_item(target, image_id, rel_path)
+            digest = str(
+                candidate.get("sha256")
+                or index_item.get("sha256")
+                or ""
+            ).strip().lower()
+            if not self._is_hash(digest):
+                digest = self._smart_file_hash(target, path)
+            result.append(
+                {
+                    "hash": digest,
+                    "image_id": image_id,
+                    "filename": str(
+                        candidate.get("filename") or path.name
+                    ),
+                    "rel_path": rel_path,
+                    "path": path,
+                    "tags": (
+                        self.normalize_tags(candidate.get("tags", []))
+                        if candidate.get("tags")
+                        else self._source_tags(candidate)
+                    ),
+                    "added_at": int(
+                        index_item.get("updated_at")
+                        or index_item.get("captioned_at")
+                        or 0
+                    ),
+                }
+            )
+        return result
+
+    @staticmethod
+    def _smart_index_item(
+        target: Any,
+        image_id: str,
+        rel_path: str,
+    ) -> dict[str, Any]:
+        getter = getattr(target, "_index_image_by_id", None)
+        if callable(getter):
+            try:
+                item = getter(image_id)
+                if isinstance(item, dict):
+                    return item
+            except Exception:
+                pass
+        index = getattr(target, "_index", {})
+        images = index.get("images", {}) if isinstance(index, dict) else {}
+        for item in images.values() if isinstance(images, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("id") or "").strip() == image_id:
+                return item
+            if str(item.get("rel_path") or "").replace("\\", "/") == rel_path:
+                return item
+        return {}
+
+    @staticmethod
+    def _smart_file_hash(target: Any, path: Path) -> str:
+        hasher = getattr(target, "_cached_sha256", None)
+        if callable(hasher):
+            try:
+                digest = str(hasher(path) or "").strip().lower()
+                if SmartImagePersonaLibraryManager._is_hash(digest):
+                    return digest
+            except Exception:
+                pass
+        digest = sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _is_hash(value: Any) -> bool:
+        digest = str(value or "").strip().lower()
+        return (
+            len(digest) == 64
+            and all(char in "0123456789abcdef" for char in digest)
+        )
 
     def _target(self) -> Any:
         target = self.adapter.target or self.adapter._find_target()
