@@ -108,6 +108,12 @@
     const meta = PAGE_META[page] || PAGE_META.users;
     $("#pageTitle").textContent = meta.title;
     $("#pageSubtitle").textContent = meta.subtitle;
+    $$("[data-page-action]").forEach((item) => {
+      const pages = String(item.dataset.pageAction || "")
+        .split(/\s+/)
+        .filter(Boolean);
+      item.classList.toggle("hidden", !pages.includes(page));
+    });
   }
 
   function escapeHtml(value) {
@@ -474,10 +480,34 @@
     return `<span class="state-pill ${tone}"><span></span>${escapeHtml(label)}</span>`;
   }
 
+  function sessionIdMarkup(value) {
+    const raw = String(value || "");
+    const index = raw.indexOf(":");
+    if (index > 0 && index < raw.length - 1) {
+      return `
+        <span class="session-id">
+          <span class="muted mono">${escapeHtml(raw.slice(0, index + 1))}</span>
+          <strong>${escapeHtml(raw.slice(index + 1))}</strong>
+        </span>
+      `;
+    }
+    return `<span class="session-id"><strong>${escapeHtml(raw)}</strong></span>`;
+  }
+
+  function featureRow(icon, label, value) {
+    return `
+      <div class="detail-row feature-row">
+        <span class="detail-icon detail-icon-${escapeHtml(icon)}" aria-hidden="true"></span>
+        <span class="detail-label">${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `;
+  }
+
   function renderUsers() {
     $("#usersBody").innerHTML = state.users.map((user) => `
       <tr>
-        <td class="mono">${escapeHtml(user.user_id)}</td>
+        <td>${sessionIdMarkup(user.user_id)}</td>
         <td class="text-nowrap">${escapeHtml(personaRuleLabel(user, "跟随会话默认"))}</td>
         <td class="text-nowrap">${statusPill(user.blocked ? "禁止使用" : "允许使用", user.blocked ? "danger" : "success")}</td>
         <td class="text-nowrap">${statusPill(user.allow_persona_switch ? "已授权" : "未授权", user.allow_persona_switch ? "success" : "neutral")}</td>
@@ -503,21 +533,21 @@
         <article class="card group-card">
           <div class="group-card-header">
             <div>
-              <h3><span class="muted mono">default:</span> ${escapeHtml(String(group.group_id || "").split(":").pop())}</h3>
+              <h3>${sessionIdMarkup(group.group_id)}</h3>
               <p>用户策略：${escapeHtml(personaRuleLabel(group, "AstrBot 默认人格"))}</p>
             </div>
             <span class="badge neutral">${memberCount} 个成员设置</span>
           </div>
           <div class="detail-panels">
             <div class="detail-panel">
-              <div class="detail-row"><span>默认人格</span><strong>${escapeHtml(personaRuleLabel(group, "跟随会话默认"))}</strong></div>
-              <div class="detail-row"><span>对话记忆</span><strong>${escapeHtml(memoryIsolationLabel(group.memory_isolation))}</strong></div>
-              <div class="detail-row"><span>长期记忆</span><strong>${escapeHtml(memoryIsolationLabel(group.livingmemory_isolation))}</strong></div>
+              ${featureRow("persona", "默认人格", personaRuleLabel(group, "跟随会话默认"))}
+              ${featureRow("chat", "对话记忆", memoryIsolationLabel(group.memory_isolation))}
+              ${featureRow("memory", "长期记忆", memoryIsolationLabel(group.livingmemory_isolation))}
             </div>
             <div class="detail-panel">
-              <div class="detail-row"><span>成员访问</span><strong>${escapeHtml(memberAccessLabel(group.member_access))}</strong></div>
-              <div class="detail-row"><span>策略管理员</span><strong>${group.policy_admins?.length || 0} 人</strong></div>
-              <div class="detail-row"><span>插件权限</span><strong>${escapeHtml(pluginModeLabel(group.plugin_access))}</strong></div>
+              ${featureRow("members", "成员访问", memberAccessLabel(group.member_access))}
+              ${featureRow("shield", "策略管理员", `${group.policy_admins?.length || 0} 人`)}
+              ${featureRow("plugin", "插件权限", pluginModeLabel(group.plugin_access))}
             </div>
           </div>
           <div class="group-actions">
@@ -560,6 +590,13 @@
     return `群成员 ${schedule.user_id} · ${groupLabel}`;
   }
 
+  function scheduleTargetMarkup(schedule) {
+    if (schedule.target_type === "private") {
+      return `私聊用户 ${sessionIdMarkup(schedule.user_id)}`;
+    }
+    return escapeHtml(scheduleTargetLabel(schedule));
+  }
+
   function formatRunTime(timestamp) {
     if (!timestamp) return "等待计算";
     return new Date(timestamp * 1000).toLocaleString("zh-CN", {
@@ -597,17 +634,20 @@
           : "尚未执行");
       return `
         <article class="card schedule-card">
-          <div class="group-card-header">
-            <div>
-              <h3>${escapeHtml(schedule.name || "未命名计划")}</h3>
-              <p>${escapeHtml(scheduleTargetLabel(schedule))}</p>
+          <div class="group-card-header schedule-card-header">
+            <div class="schedule-title">
+              <span class="content-card-icon icon-calendar" aria-hidden="true"></span>
+              <div>
+                <h3>${escapeHtml(schedule.name || "未命名计划")}</h3>
+                <p>${scheduleTargetMarkup(schedule)}</p>
+              </div>
             </div>
             <span class="badge ${statusClass}">${statusLabel}</span>
           </div>
-          <div class="detail-list">
-            <div class="detail-row"><span>执行规则</span><strong>${escapeHtml(scheduleRuleLabel(schedule))}</strong></div>
-            <div class="detail-row"><span>下次执行</span><strong>${escapeHtml(schedule.enabled ? formatRunTime(runtime.next_run_at) : "已停用")}</strong></div>
-            <div class="detail-row"><span>上次结果</span><strong>${escapeHtml(lastResult)}</strong></div>
+          <div class="detail-list schedule-timeline">
+            ${featureRow("clock", "执行规则", scheduleRuleLabel(schedule))}
+            ${featureRow("calendar", "下次执行", schedule.enabled ? formatRunTime(runtime.next_run_at) : "已停用")}
+            ${featureRow(runtime.last_status === "error" ? "warning" : "pulse", "上次结果", lastResult)}
           </div>
           <div class="group-actions">
             <button class="button small" type="button" data-edit-schedule="${escapeHtml(schedule.schedule_id)}">编辑</button>
@@ -3295,7 +3335,7 @@
       syncPageHeader(target.dataset.page);
       return;
     }
-    if (target.id === "addUserButton") return openUserEditor();
+    if (target.id === "addUserButton" || target.matches("[data-add-user-inline]")) return openUserEditor();
     if (target.id === "addGroupButton") return openGroupEditor();
     if (target.id === "addMemberButton") return openMemberEditor();
     if (target.id === "addScheduleButton") return openScheduleEditor();

@@ -21,6 +21,11 @@
       </div>
       <div class="header-side">
         <span class="status" id="runtimeStatus">正在读取</span>
+        <div class="header-actions">
+          <button class="button hidden" type="button" data-import-sessions data-page-action="groups">导入已有会话</button>
+          <button class="button primary hidden" type="button" id="addGroupButton" data-page-action="groups">添加群聊</button>
+          <button class="button primary hidden" type="button" id="addScheduleButton" data-page-action="schedules">添加计划</button>
+        </div>
       </div>
     </header>
 
@@ -46,7 +51,7 @@
           </div>
           <div class="row-actions">
             <button class="button" type="button" data-import-sessions>导入已有会话</button>
-            <button class="button primary" type="button" id="addUserButton">添加用户</button>
+            <button class="button primary" type="button" data-add-user-inline>添加用户</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -75,14 +80,10 @@
     </section>
 
     <section class="page" id="page-groups">
-      <div class="section-heading page-toolbar">
+      <div class="section-heading page-toolbar no-actions">
         <div>
           <h2>群聊管理</h2>
           <p>设置群默认人格、成员名单、策略管理员和插件范围。</p>
-        </div>
-        <div class="row-actions">
-          <button class="button" type="button" data-import-sessions>导入已有会话</button>
-          <button class="button primary" type="button" id="addGroupButton">添加群聊</button>
         </div>
       </div>
       <div class="group-grid" id="groupsGrid"></div>
@@ -93,12 +94,11 @@
     </section>
 
     <section class="page" id="page-schedules">
-      <div class="section-heading page-toolbar">
+      <div class="section-heading page-toolbar no-actions">
         <div>
           <h2>人格计划</h2>
           <p>每天、每周定时切换固定人格，或按间隔从指定范围随机切换。</p>
         </div>
-        <button class="button primary" type="button" id="addScheduleButton">添加计划</button>
       </div>
       <div class="schedule-grid" id="schedulesGrid"></div>
       <div class="card empty hidden" id="schedulesEmpty">
